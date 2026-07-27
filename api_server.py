@@ -63,7 +63,7 @@ def handle_transcribe():
         print(f" [STT SUCCESS] Transcribed: '{text}'")
     except Exception as e:
         print(f" [STT ERROR] Transcription failed: {e}")
-        text = "Error during transcription."
+        return jsonify({"success": False, "message": "Could not transcribe audio"}), 500
         
     return jsonify({"success": True, "text": text})
 
@@ -219,6 +219,12 @@ When the user expresses an emotion, be empathetic and non-judgmental.
             final_text = response_message.content
             
         print(f" [CHAT SUCCESS] Final response generated.")
+        
+        # Strip <thought> and <think> tags (and their contents) from final_text so TTS doesn't read them
+        import re
+        final_text = re.sub(r'<thought>.*?</thought>', '', final_text, flags=re.DOTALL)
+        final_text = re.sub(r'<think>.*?</think>', '', final_text, flags=re.DOTALL)
+        final_text = final_text.strip()
         
         # Update history
         chat_histories[user_id].append({"role": "user", "content": user_text})
