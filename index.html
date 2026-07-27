@@ -4,38 +4,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tinkr - AI Assistant</title>
+    <title>Tinkr - AI Voice Agent</title>
     <meta name="description" content="Tinkr voice assistant with mental state tracking and biomarker analysis">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0a0e1a;
-            --bg-secondary: #0f172a;
-            --surface: #1e293b;
-            --surface-elevated: #253349;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --text-dim: #64748b;
-            --accent: #3b82f6;
-            --accent-glow: rgba(59, 130, 246, 0.3);
+            --bg-color: #0d0d0d;
+            --bg-secondary: #1a1a1a;
+            --surface: #262626;
+            --surface-elevated: #333333;
+            --text-main: #f5f5f5;
+            --text-muted: #a3a3a3;
+            --text-dim: #737373;
+            --accent: #e2b714;
             --danger: #ef4444;
             --success: #10b981;
-            --warning: #f59e0b;
-            --purple: #8b5cf6;
-            --border: #334155;
-            --border-subtle: #1e293b;
+            --border: #404040;
+            --border-radius: 16px;
         }
 
         * {
             box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
         body {
-            margin: 0;
-            padding: 0;
             background-color: var(--bg-color);
             color: var(--text-main);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -44,168 +41,187 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            overflow-x: hidden;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
         /* ── Setup Modal ── */
         .setup-modal {
             position: fixed;
             inset: 0;
-            background: rgba(10, 14, 26, 0.97);
+            background: var(--bg-color);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             z-index: 100;
-            backdrop-filter: blur(20px);
         }
 
         .setup-modal.hidden {
-            display: none;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
         }
 
         .setup-card {
-            background: linear-gradient(145deg, var(--surface), var(--bg-secondary));
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 3rem 2.5rem;
-            width: 420px;
+            padding: 3rem;
+            width: 400px;
             max-width: 90vw;
-            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 80px var(--accent-glow);
             text-align: center;
         }
 
         .setup-logo {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            justify-content: center;
+        }
+
+        .setup-logo .material-icons-round {
+            font-size: 4rem;
+            color: var(--text-main);
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 50%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
 
         .setup-card h2 {
-            margin: 0 0 0.25rem 0;
-            font-size: 1.75rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--text-main), var(--accent));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.5px;
         }
 
         .setup-card p {
             color: var(--text-muted);
-            font-size: 0.9rem;
-            margin: 0 0 2rem 0;
-        }
-
-        .input-group {
-            margin-bottom: 1rem;
-            text-align: left;
-        }
-
-        .input-group label {
-            display: block;
-            font-size: 0.8rem;
-            font-weight: 500;
-            color: var(--text-muted);
-            margin-bottom: 0.4rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 0.95rem;
+            margin-bottom: 2.5rem;
+            line-height: 1.5;
         }
 
         .api-input {
-            padding: 0.875rem 1rem;
+            padding: 1rem 1.25rem;
             border-radius: 12px;
             border: 1px solid var(--border);
-            background: var(--bg-color);
+            background: var(--bg-secondary);
             color: var(--text-main);
             width: 100%;
-            font-size: 0.95rem;
+            font-size: 1rem;
             font-family: 'Inter', sans-serif;
-            transition: border-color 0.3s, box-shadow 0.3s;
+            transition: all 0.3s;
             outline: none;
+            margin-bottom: 1.5rem;
+            text-align: center;
         }
 
         .api-input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-glow);
-        }
-
-        .api-input::placeholder {
-            color: var(--text-dim);
+            border-color: var(--text-main);
+            box-shadow: 0 0 0 1px var(--text-main);
         }
 
         .btn-start {
             padding: 1rem 2rem;
-            border-radius: 12px;
-            background: linear-gradient(135deg, var(--accent), #2563eb);
-            color: white;
+            border-radius: 99px;
+            background: var(--text-main);
+            color: var(--bg-color);
             border: none;
             font-weight: 600;
             font-size: 1rem;
             cursor: pointer;
             width: 100%;
-            margin-top: 0.5rem;
-            transition: transform 0.2s, box-shadow 0.3s;
+            transition: transform 0.2s, opacity 0.2s;
             font-family: 'Inter', sans-serif;
         }
 
         .btn-start:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px var(--accent-glow);
+            opacity: 0.9;
+            transform: scale(1.02);
         }
 
-        .btn-start:active {
-            transform: translateY(0);
-        }
-
-        /* ── Status Badge ── */
-        .status-badge {
+        /* ── Main UI Layout ── */
+        .header {
             position: absolute;
             top: 2rem;
-            background: var(--surface);
-            padding: 0.5rem 1.25rem;
-            border-radius: 999px;
-            font-size: 0.875rem;
-            font-weight: 500;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 2rem;
+            z-index: 10;
+        }
+
+        .brand {
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            border: 1px solid var(--border);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            font-weight: 600;
+            font-size: 1.1rem;
+            letter-spacing: -0.5px;
+        }
+        
+        .brand .material-icons-round {
+            font-size: 1.5rem;
         }
 
-        .dot {
-            width: 8px;
-            height: 8px;
+        .icon-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.5rem;
             border-radius: 50%;
-            background: var(--text-muted);
-            transition: background 0.3s, box-shadow 0.3s;
-        }
-
-        .dot.live {
-            background: var(--success);
-            box-shadow: 0 0 10px var(--success);
-            animation: pulse-dot 2s infinite;
-        }
-
-        .dot.speaking {
-            background: var(--accent);
-            box-shadow: 0 0 10px var(--accent);
-        }
-
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* ── Orb & Call Button ── */
-        .orb-container {
-            position: relative;
-            width: 150px;
-            height: 150px;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 2rem;
+            transition: all 0.2s;
+        }
+
+        .icon-btn:hover {
+            color: var(--text-main);
+            background: var(--surface);
+        }
+
+        /* ── Status Indicator ── */
+        .status-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -180px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            z-index: 5;
+            text-align: center;
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        /* ── The Voice Orb (Centerpiece) ── */
+        .main-stage {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            width: 100%;
+            position: relative;
+        }
+
+        .orb-wrapper {
+            position: relative;
+            width: 180px;
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .call-button {
@@ -213,514 +229,256 @@
             height: 100px;
             border-radius: 50%;
             border: none;
-            background: linear-gradient(145deg, var(--surface), var(--surface-elevated));
+            background: var(--surface);
             color: var(--text-main);
-            font-size: 2.5rem;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             z-index: 10;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
-            transition: background 0.3s, transform 0.15s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .call-button .material-icons-round {
+            font-size: 2.5rem;
+            transition: all 0.3s;
         }
 
         .call-button:hover {
-            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.6), 0 0 20px var(--accent-glow);
+            transform: scale(1.05);
+            background: var(--surface-elevated);
         }
 
         .call-button.active {
-            background: linear-gradient(145deg, var(--danger), #dc2626);
-            color: white;
-            transform: scale(var(--mic-scale, 1));
-            box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+            background: var(--text-main);
+            color: var(--bg-color);
+            transform: scale(var(--mic-scale, 1.1));
+            box-shadow: 0 10px 40px rgba(255,255,255,0.2);
+        }
+        
+        .call-button.active .material-icons-round {
+            color: var(--danger);
         }
 
-        .ring {
+        .wave-ring {
             position: absolute;
             width: 100%;
             height: 100%;
             border-radius: 50%;
-            border: 2px solid var(--accent);
+            background: var(--text-main);
             opacity: 0;
             pointer-events: none;
-            transform: scale(var(--ai-scale, 1));
-            transition: transform 0.05s ease-out, opacity 0.1s;
+            transform: scale(var(--ai-scale, 0.5));
+            transition: transform 0.1s ease-out;
+            z-index: 1;
+            filter: blur(20px);
         }
 
-        .speaking-mode .ring {
-            opacity: 0.8;
+        .speaking-mode .wave-ring {
+            opacity: 0.15;
         }
 
-        /* ── Toolbar ── */
-        .toolbar {
-            display: flex;
-            gap: 0.75rem;
-            margin-bottom: 1.25rem;
-        }
-
-        .toolbar-btn {
-            padding: 0.5rem 1rem;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            background: var(--surface);
-            color: var(--text-muted);
-            font-size: 0.8rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.25s;
-            font-family: 'Inter', sans-serif;
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
-
-        .toolbar-btn:hover {
-            background: var(--surface-elevated);
-            color: var(--text-main);
-            border-color: var(--accent);
-        }
-
-        .toolbar-btn.active {
-            background: rgba(59, 130, 246, 0.15);
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-        /* ── Transcript ── */
-        .transcript-container {
-            width: 90%;
-            max-width: 550px;
-            height: 340px;
-            background: var(--surface);
-            border-radius: 20px;
-            padding: 1.25rem;
-            overflow-y: auto;
-            border: 1px solid var(--border);
+        /* ── Minimal Transcript ── */
+        .transcript-wrapper {
+            position: absolute;
+            bottom: 3rem;
+            width: 100%;
+            max-width: 600px;
+            height: 140px;
+            padding: 0 2rem;
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            justify-content: flex-end;
+            align-items: center;
+            text-align: center;
+            z-index: 5;
+            mask-image: linear-gradient(to bottom, transparent, black 40%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 40%);
         }
 
-        .transcript-container::-webkit-scrollbar {
-            width: 6px;
-        }
-        .transcript-container::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        .transcript-container::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 3px;
-        }
-
-        .message {
-            font-size: 0.92rem;
+        .transcript-stream {
+            font-size: 1.1rem;
             line-height: 1.6;
-            padding: 0.75rem 1rem;
-            border-radius: 14px;
-            max-width: 85%;
-            width: fit-content;
-            word-wrap: break-word;
-            animation: msg-in 0.25s ease-out;
+            color: var(--text-main);
+            font-weight: 400;
+            transition: all 0.3s ease;
         }
 
-        @keyframes msg-in {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
+        .transcript-stream .ai-text {
+            color: var(--text-main);
         }
 
-        .user-msg {
-            background: linear-gradient(135deg, #334155, #3b4a63);
-            align-self: flex-end;
-            color: white;
-            border-bottom-right-radius: 4px;
-        }
-
-        .ai-msg {
-            background: rgba(59, 130, 246, 0.08);
-            border: 1px solid rgba(59, 130, 246, 0.15);
-            align-self: flex-start;
-            color: #93bbfc;
-            border-bottom-left-radius: 4px;
-        }
-
-        .system-msg {
-            align-self: center;
-            font-size: 0.8rem;
-            color: var(--text-dim);
+        .transcript-stream .user-text {
+            color: var(--text-muted);
             font-style: italic;
         }
 
-        .tool-card {
-            align-self: center;
-            background: rgba(16, 185, 129, 0.08);
-            border: 1px dashed rgba(16, 185, 129, 0.3);
-            color: #34d399;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            border-radius: 10px;
-            padding: 0.75rem 1rem;
-            width: 90%;
-            box-sizing: border-box;
-            white-space: pre-wrap;
-        }
-
-        /* ── Mental State Confirmation Card ── */
-        .mental-state-card {
-            align-self: center;
-            background: linear-gradient(145deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.08));
-            border: 1px solid rgba(139, 92, 246, 0.3);
-            border-radius: 16px;
-            padding: 1.25rem;
-            width: 92%;
-            box-sizing: border-box;
-            animation: card-pulse 0.5s ease-out;
-        }
-
-        @keyframes card-pulse {
-            0% { opacity: 0; transform: scale(0.95); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-
-        .mental-state-card .state-header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.75rem;
-        }
-
-        .mental-state-card .state-icon {
-            font-size: 1.5rem;
-        }
-
-        .mental-state-card .state-title {
-            font-weight: 600;
-            font-size: 0.95rem;
-            color: var(--purple);
-        }
-
-        .mental-state-card .state-detail {
-            font-size: 0.82rem;
-            color: var(--text-muted);
-            margin-bottom: 0.5rem;
-            line-height: 1.5;
-        }
-
-        .mental-state-card .state-metrics {
-            display: flex;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-            flex-wrap: wrap;
-        }
-
-        .metric-chip {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
-            padding: 0.3rem 0.6rem;
-            font-size: 0.72rem;
+        .transcript-stream .system-text {
+            font-size: 0.9rem;
             color: var(--text-dim);
             font-family: 'JetBrains Mono', monospace;
+            margin-top: 0.5rem;
         }
 
-        .mental-state-card .state-actions {
-            display: flex;
-            gap: 0.75rem;
-        }
-
-        .state-btn {
-            flex: 1;
-            padding: 0.6rem 1rem;
-            border-radius: 10px;
-            border: none;
-            font-weight: 600;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-family: 'Inter', sans-serif;
-        }
-
-        .state-btn.confirm {
-            background: linear-gradient(135deg, var(--success), #059669);
-            color: white;
-        }
-
-        .state-btn.confirm:hover {
-            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
-            transform: translateY(-1px);
-        }
-
-        .state-btn.reject {
-            background: rgba(239, 68, 68, 0.15);
-            color: var(--danger);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
-
-        .state-btn.reject:hover {
-            background: rgba(239, 68, 68, 0.25);
-        }
-
-        .state-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none !important;
-            box-shadow: none !important;
-        }
-
-        /* ── Dashboard / History Panel ── */
-        .dashboard {
+        /* ── Mental State Confirmation Modal (Clean UI) ── */
+        .wellness-modal {
             position: fixed;
-            right: -440px;
+            bottom: -100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            width: 90%;
+            max-width: 400px;
+            z-index: 60;
+            transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .wellness-modal.show {
+            bottom: 2rem;
+        }
+
+        .wellness-icon {
+            font-size: 2rem;
+            color: var(--accent);
+            margin-bottom: 1rem;
+        }
+
+        .wellness-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .wellness-desc {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+            line-height: 1.4;
+        }
+
+        .wellness-actions {
+            display: flex;
+            gap: 1rem;
+            width: 100%;
+        }
+
+        .btn-wellness {
+            flex: 1;
+            padding: 0.75rem;
+            border-radius: 8px;
+            border: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }
+
+        .btn-wellness.confirm {
+            background: var(--text-main);
+            color: var(--bg-color);
+        }
+
+        .btn-wellness.confirm:hover {
+            background: #fff;
+        }
+
+        .btn-wellness.reject {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+
+        .btn-wellness.reject:hover {
+            background: var(--surface-elevated);
+            color: var(--text-main);
+        }
+
+        /* ── History Sidebar ── */
+        .sidebar {
+            position: fixed;
+            right: -400px;
             top: 0;
             bottom: 0;
-            width: 400px;
-            background: rgba(15, 23, 42, 0.97);
-            backdrop-filter: blur(20px);
+            width: 350px;
+            background: var(--bg-secondary);
             border-left: 1px solid var(--border);
-            padding: 1.5rem;
-            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+            padding: 2rem;
+            transition: right 0.3s ease;
             z-index: 50;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
         }
 
-        .dashboard.open {
+        .sidebar.open {
             right: 0;
         }
 
-        .dashboard::-webkit-scrollbar {
-            width: 5px;
-        }
-        .dashboard::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 3px;
-        }
-
-        .dashboard-header {
+        .sidebar-header {
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            margin-bottom: 1.25rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
+            align-items: center;
+            margin-bottom: 2rem;
         }
 
-        .dashboard h3 {
-            margin: 0;
-            font-size: 1.1rem;
-            font-weight: 600;
-            background: linear-gradient(135deg, var(--purple), var(--accent));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .close-btn {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1.1rem;
+        .sidebar-header h3 {
+            font-size: 1.2rem;
+            font-weight: 500;
             display: flex;
             align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
+            gap: 0.5rem;
         }
 
-        .close-btn:hover {
-            background: rgba(239, 68, 68, 0.15);
-            color: var(--danger);
-            border-color: var(--danger);
-        }
-
-        .history-empty {
-            text-align: center;
-            padding: 3rem 1rem;
-            color: var(--text-dim);
-            font-size: 0.9rem;
-        }
-
-        .history-empty .empty-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            opacity: 0.5;
-        }
-
-        /* History Entry */
-        .history-entry {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 14px;
+        .history-item {
             padding: 1rem;
-            margin-bottom: 0.75rem;
-            transition: border-color 0.2s;
+            background: var(--surface);
+            border-radius: 12px;
+            margin-bottom: 1rem;
         }
 
-        .history-entry:hover {
-            border-color: var(--purple);
-        }
-
-        .history-entry-header {
+        .history-item-header {
             display: flex;
-            align-items: center;
             justify-content: space-between;
+            align-items: center;
             margin-bottom: 0.5rem;
         }
-
-        .history-state-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            padding: 0.25rem 0.65rem;
-            border-radius: 999px;
-            font-size: 0.75rem;
+        
+        .history-state {
             font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--accent);
             text-transform: capitalize;
         }
 
-        .history-state-badge.stressed {
-            background: rgba(239, 68, 68, 0.15);
-            color: #f87171;
-        }
-        .history-state-badge.anxious {
-            background: rgba(245, 158, 11, 0.15);
-            color: #fbbf24;
-        }
-        .history-state-badge.fatigued {
-            background: rgba(139, 92, 246, 0.15);
-            color: #a78bfa;
-        }
-        .history-state-badge.calm {
-            background: rgba(16, 185, 129, 0.15);
-            color: #34d399;
-        }
-        .history-state-badge.unknown {
-            background: rgba(148, 163, 184, 0.15);
-            color: var(--text-muted);
-        }
-
-        .history-timestamp {
-            font-size: 0.7rem;
+        .history-time {
+            font-size: 0.75rem;
             color: var(--text-dim);
         }
 
-        .history-confirmed {
-            font-size: 0.72rem;
-            color: var(--text-dim);
-            margin-bottom: 0.5rem;
-        }
-
-        .history-confirmed .check {
-            color: var(--success);
-        }
-        .history-confirmed .cross {
-            color: var(--danger);
-        }
-
-        .history-metrics {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            margin-bottom: 0.5rem;
-        }
-
-        .history-suggestions {
-            margin-top: 0.5rem;
-            padding-top: 0.5rem;
-            border-top: 1px solid var(--border-subtle);
-        }
-
-        .history-suggestions-title {
-            font-size: 0.72rem;
-            color: var(--text-dim);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 0.35rem;
-        }
-
-        .history-suggestion-item {
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            padding: 0.2rem 0;
-            padding-left: 0.75rem;
-            position: relative;
-        }
-
-        .history-suggestion-item::before {
-            content: "→";
-            position: absolute;
-            left: 0;
-            color: var(--accent);
-            font-size: 0.7rem;
-        }
-
-        /* Chart section in dashboard */
-        .chart-section {
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border);
-        }
-
-        .chart-section h4 {
-            margin: 0 0 0.75rem 0;
+        .history-details {
             font-size: 0.85rem;
             color: var(--text-muted);
-            font-weight: 500;
         }
 
-        /* ── Suggestion Toast ── */
-        .suggestion-toast {
-            align-self: center;
-            background: linear-gradient(145deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.05));
-            border: 1px solid rgba(16, 185, 129, 0.2);
-            border-radius: 12px;
-            padding: 1rem;
-            width: 92%;
-            box-sizing: border-box;
-        }
-
-        .suggestion-toast .toast-title {
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: var(--success);
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
-
-        .suggestion-toast .toast-item {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            padding: 0.25rem 0 0.25rem 1rem;
-            position: relative;
-            line-height: 1.5;
-        }
-
-        .suggestion-toast .toast-item::before {
-            content: "✦";
-            position: absolute;
-            left: 0;
-            color: var(--success);
-            font-size: 0.65rem;
-        }
-
-        /* ── Responsive ── */
-        @media (max-width: 600px) {
-            .setup-card { padding: 2rem 1.5rem; width: 95vw; }
-            .dashboard { width: 100%; right: -100%; }
-            .dashboard.open { right: 0; }
-            .transcript-container { height: 280px; }
+        /* Animations */
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -728,77 +486,97 @@
     <!-- ── Setup Modal ── -->
     <div id="setupModal" class="setup-modal">
         <div class="setup-card">
-            <div class="setup-logo">🌌</div>
+            <div class="setup-logo">
+                <span class="material-icons-round">graphic_eq</span>
+            </div>
             <h2>Tinkr</h2>
-            <p>AI Voice Assistant with Mental Wellness Tracking</p>
+            <p>Your intelligent, empathetic voice assistant.</p>
 
-            <div class="input-group">
-                <label>Your Name / ID</label>
-                <input type="text" id="userId" class="api-input" placeholder="e.g. john_doe or your email">
-            </div>
+            <input type="text" id="userId" class="api-input" placeholder="Enter your Name or ID">
 
-            <div class="input-group">
-                <label>Gemini API Key</label>
-                <input type="password" id="apiKey" class="api-input" placeholder="AIza...">
-            </div>
-
-            <button id="startSessionBtn" class="btn-start">Connect to Agent</button>
+            <button id="startSessionBtn" class="btn-start">Start Session</button>
         </div>
     </div>
 
-    <!-- ── History Dashboard ── -->
-    <div class="dashboard" id="dashboard">
-        <div class="dashboard-header">
-            <h3>🧠 Mental State History</h3>
-            <button class="close-btn" id="closeDashboard">✕</button>
+    <!-- ── Header ── -->
+    <header class="header">
+        <div class="brand">
+            <span class="material-icons-round">graphic_eq</span>
+            Tinkr
+        </div>
+        <button class="icon-btn" id="historyBtn" title="Mental State History">
+            <span class="material-icons-round">history</span>
+        </button>
+    </header>
+
+    <!-- ── Main Stage ── -->
+    <main class="main-stage">
+        
+        <div class="status-container">
+            <span class="status-text" id="statusText">Disconnected</span>
+        </div>
+
+        <div class="orb-wrapper" id="orbContainer">
+            <div class="wave-ring"></div>
+            <button class="call-button" id="callBtn">
+                <span class="material-icons-round">mic</span>
+            </button>
+        </div>
+
+        <div class="transcript-wrapper">
+            <div class="transcript-stream" id="transcriptStream">
+                <!-- Text appears here naturally -->
+            </div>
+        </div>
+    </main>
+
+    <!-- ── Wellness Confirmation Modal ── -->
+    <div class="wellness-modal" id="wellnessModal">
+        <span class="material-icons-round wellness-icon" id="wellnessIcon">psychology</span>
+        <div class="wellness-title" id="wellnessTitle">Stress Detected</div>
+        <div class="wellness-desc" id="wellnessDesc">Voice analysis suggests you might be feeling stressed. Is this accurate?</div>
+        <div class="wellness-actions">
+            <button class="btn-wellness reject" onclick="confirmMentalState(false)">
+                <span class="material-icons-round">close</span> Skip
+            </button>
+            <button class="btn-wellness confirm" onclick="confirmMentalState(true)">
+                <span class="material-icons-round">check</span> Confirm
+            </button>
+        </div>
+    </div>
+
+    <!-- ── History Sidebar ── -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h3><span class="material-icons-round">insights</span> Wellness Logs</h3>
+            <button class="icon-btn" id="closeSidebar">
+                <span class="material-icons-round">close</span>
+            </button>
         </div>
         <div id="historyContent">
-            <div class="history-empty">
-                <div class="empty-icon">📊</div>
-                <p>No mental state records yet.<br>Start a call to begin tracking.</p>
-            </div>
+            <!-- Populated via JS -->
+            <p style="color: var(--text-dim); text-align: center; margin-top: 2rem;">No logs available.</p>
         </div>
-        <div class="chart-section">
-            <h4>📈 Data Visualization</h4>
-            <canvas id="dataChart"></canvas>
-        </div>
-    </div>
-
-    <!-- ── Main UI ── -->
-    <div class="status-badge" id="statusBadge">
-        <div class="dot" id="statusDot"></div>
-        <span id="statusText">Disconnected</span>
-    </div>
-
-    <div class="orb-container" id="orbContainer">
-        <div class="ring"></div>
-        <button class="call-button" id="callBtn"><span class="material-icons" style="font-size: inherit;">call</span></button>
-    </div>
-
-    <div class="toolbar">
-        <button class="toolbar-btn" id="historyBtn">📋 History</button>
-    </div>
-
-    <div class="transcript-container" id="transcript">
-        <div class="message system-msg">Waiting to connect...</div>
-    </div>
+    </aside>
 
     <script>
-        // ── DOM References ──
+        // ── DOM Elements ──
         const UI = {
             setupModal: document.getElementById('setupModal'),
             startBtn: document.getElementById('startSessionBtn'),
-            apiKeyInput: document.getElementById('apiKey'),
             userIdInput: document.getElementById('userId'),
             callBtn: document.getElementById('callBtn'),
             statusText: document.getElementById('statusText'),
-            statusDot: document.getElementById('statusDot'),
-            transcript: document.getElementById('transcript'),
+            transcriptStream: document.getElementById('transcriptStream'),
             orbContainer: document.getElementById('orbContainer'),
-            dashboard: document.getElementById('dashboard'),
+            sidebar: document.getElementById('sidebar'),
             historyBtn: document.getElementById('historyBtn'),
-            closeDashboard: document.getElementById('closeDashboard'),
+            closeSidebar: document.getElementById('closeSidebar'),
             historyContent: document.getElementById('historyContent'),
+            wellnessModal: document.getElementById('wellnessModal'),
+            wellnessIcon: document.getElementById('wellnessIcon'),
+            wellnessTitle: document.getElementById('wellnessTitle'),
+            wellnessDesc: document.getElementById('wellnessDesc')
         };
 
         // ── State ──
@@ -807,64 +585,39 @@
         let audioChunks = [];
         let mediaStream = null;
         let currentUserId = '';
-        let mentalStateContext = '';
-        let pendingBiomarkerData = null; // Stores the latest biomarker result awaiting confirmation
+        let pendingBiomarkerData = null;
         let micAnalyser = null;
         let visualizerId = null;
 
-        // ── Dashboard Controls ──
+        // ── Navigation ──
         UI.historyBtn.addEventListener('click', () => {
-            const isOpen = UI.dashboard.classList.toggle('open');
-            UI.historyBtn.classList.toggle('active', isOpen);
-            if (isOpen && currentUserId) {
-                loadHistory();
-            }
+            UI.sidebar.classList.add('open');
+            if (currentUserId) loadHistory();
         });
 
-        UI.closeDashboard.addEventListener('click', () => {
-            UI.dashboard.classList.remove('open');
-            UI.historyBtn.classList.remove('active');
+        UI.closeSidebar.addEventListener('click', () => {
+            UI.sidebar.classList.remove('open');
         });
 
         // ── Session Start ──
         UI.startBtn.addEventListener('click', async () => {
             currentUserId = UI.userIdInput.value.trim();
-
             if (!currentUserId) return alert("Please enter your name or ID.");
 
             UI.setupModal.classList.add('hidden');
-            updateStatus('Connecting...', 'speaking');
-            addMessage('Initializing connection to Tinkr backend...', 'system-msg');
-
-            // Fetch mental state context from Firebase before connecting
-            try {
-                const ctxRes = await fetch('http://127.0.0.1:5000/api/get_mental_state_context', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: currentUserId })
-                });
-                const ctxData = await ctxRes.json();
-                if (ctxData.success && ctxData.context) {
-                    mentalStateContext = ctxData.context;
-                    console.log("🧠 Loaded mental state context:", mentalStateContext);
-                }
-            } catch (err) {
-                console.warn("Could not load mental state context:", err);
-                mentalStateContext = '';
-            }
-
-            updateStatus('Ready', 'muted');
-            addMessage(`Welcome back, ${currentUserId}! Tap the mic to record a message.`, 'system-msg');
+            updateStatus('Ready to listen');
+            setStreamText("Tap the microphone to start.", "system-text");
         });
 
-        // ── Call Button (Tap to Toggle Recording) ──
+        // ── Voice Interaction ──
         UI.callBtn.addEventListener('click', async () => {
             isCallActive = !isCallActive;
 
             if (isCallActive) {
                 UI.callBtn.classList.add('active');
-                UI.callBtn.innerHTML = '<span class="material-icons" style="font-size: inherit;">mic</span>';
-                updateStatus('Recording...', 'live');
+                UI.callBtn.innerHTML = '<span class="material-icons-round">stop</span>';
+                updateStatus('Listening...');
+                setStreamText("Listening...", "user-text");
 
                 try {
                     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -880,9 +633,7 @@
                     audioChunks = [];
 
                     mediaRecorder.ondataavailable = e => {
-                        if (e.data.size > 0) {
-                            audioChunks.push(e.data);
-                        }
+                        if (e.data.size > 0) audioChunks.push(e.data);
                     };
 
                     mediaRecorder.onstop = async () => {
@@ -896,12 +647,13 @@
                     console.error("Mic Error:", err);
                     isCallActive = false;
                     resetCallBtnUI();
+                    setStreamText("Microphone access denied.", "system-text");
                 }
             } else {
                 resetCallBtnUI();
                 if (mediaRecorder && mediaRecorder.state !== "inactive") {
                     mediaRecorder.stop();
-                    updateStatus('Processing...', 'speaking');
+                    updateStatus('Processing...');
                 }
                 if (mediaStream) {
                     mediaStream.getTracks().forEach(t => t.stop());
@@ -911,11 +663,11 @@
 
         function resetCallBtnUI() {
             UI.callBtn.classList.remove('active');
-            UI.callBtn.innerHTML = '<span class="material-icons" style="font-size: inherit;">call</span>';
+            UI.callBtn.innerHTML = '<span class="material-icons-round">mic</span>';
             UI.orbContainer.classList.remove('speaking-mode');
             if (visualizerId) cancelAnimationFrame(visualizerId);
             UI.callBtn.style.setProperty('--mic-scale', '1');
-            UI.orbContainer.style.setProperty('--ai-scale', '1');
+            UI.orbContainer.style.setProperty('--ai-scale', '0.5');
         }
 
         async function processAudio(audioBlob) {
@@ -923,7 +675,7 @@
             formData.append('audio', audioBlob, 'recording.webm');
             
             try {
-                addMessage("...", "user-msg"); // placeholder
+                // 1. STT Pipeline
                 const transRes = await fetch('http://127.0.0.1:5000/api/transcribe', {
                     method: 'POST',
                     body: formData
@@ -931,14 +683,13 @@
                 const transData = await transRes.json();
                 
                 if (transData.success && transData.text) {
-                    const msgs = document.querySelectorAll('.user-msg');
-                    if (msgs.length > 0) msgs[msgs.length - 1].innerText = transData.text;
+                    setStreamText(`"${transData.text}"`, "user-text");
                     
+                    // 2. Emotion Tracking
                     const reader = new FileReader();
                     reader.readAsDataURL(audioBlob);
                     reader.onloadend = async () => {
                         const base64Audio = reader.result.split(',')[1];
-                        let currentEmotionContext = mentalStateContext;
                         
                         try {
                             const bioRes = await fetch('http://127.0.0.1:5000/api/analyze_audio', {
@@ -949,13 +700,13 @@
                             const bioData = await bioRes.json();
                             if (bioData.alert) {
                                 pendingBiomarkerData = bioData;
-                                showMentalStateConfirmation(bioData);
-                                currentEmotionContext += `\n[SYSTEM: Voice analysis detected recent ${bioData.predicted_state}.]`;
+                                triggerWellnessPrompt(bioData);
                             }
                         } catch (err) {
                             console.error("Biomarker API Error:", err);
                         }
                         
+                        // 3. Gemma 4 Brain
                         setSpeakingState(true);
                         const chatRes = await fetch('http://127.0.0.1:5000/api/chat', {
                             method: 'POST',
@@ -963,95 +714,92 @@
                             body: JSON.stringify({
                                 text: transData.text,
                                 user_id: currentUserId,
-                                emotion_context: currentEmotionContext
                             })
                         });
                         const chatData = await chatRes.json();
                         
                         setSpeakingState(false);
                         if (chatData.success && chatData.text) {
-                            addMessage(chatData.text, 'ai-msg');
+                            setStreamText(chatData.text, "ai-text");
                             speakText(chatData.text);
                         }
-                        updateStatus('Ready', 'muted');
+                        updateStatus('Ready');
                     };
                 } else {
-                    addMessage("Could not transcribe audio.", "system-msg");
-                    updateStatus('Ready', 'muted');
+                    setStreamText("Could not transcribe audio.", "system-text");
+                    updateStatus('Ready');
                 }
             } catch (err) {
                 console.error("Pipeline Error:", err);
-                addMessage("Error processing audio.", "system-msg");
-                updateStatus('Ready', 'muted');
+                setStreamText("Network error during processing.", "system-text");
+                updateStatus('Ready');
             }
         }
         
+        // ── TTS (Browser Native) ──
         function speakText(text) {
             if ('speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance(text);
-                
                 const voices = window.speechSynthesis.getVoices();
                 const goodVoice = voices.find(v => v.name.includes("Google") || v.name.includes("Samantha") || v.name.includes("Siri"));
                 if (goodVoice) utterance.voice = goodVoice;
                 
-                utterance.rate = 1.1; 
+                utterance.rate = 1.05; 
                 
                 utterance.onstart = () => {
                     UI.orbContainer.classList.add('speaking-mode');
+                    startAiVisualizer();
                 };
                 utterance.onend = () => {
                     UI.orbContainer.classList.remove('speaking-mode');
+                    UI.orbContainer.style.setProperty('--ai-scale', '0.5');
+                    if(visualizerId) cancelAnimationFrame(visualizerId);
                 };
                 
                 window.speechSynthesis.speak(utterance);
             }
         }
 
-        // ── Mental State Confirmation Card ──
-        function showMentalStateConfirmation(bioData) {
-            const stateIcons = {
-                stressed: '😰', anxious: '😟', fatigued: '😴', calm: '😌', unknown: '❓'
-            };
-
-            const card = document.createElement('div');
-            card.className = 'mental-state-card';
-            card.innerHTML = `
-                <div class="state-header">
-                    <span class="state-icon">${stateIcons[bioData.predicted_state] || '🧠'}</span>
-                    <span class="state-title">Mental State Detected: ${bioData.predicted_state.charAt(0).toUpperCase() + bioData.predicted_state.slice(1)}</span>
-                </div>
-                <div class="state-detail">
-                    Voice analysis suggests you may be feeling <strong>${bioData.predicted_state}</strong>.
-                    Energy level: <strong>${bioData.voice_energy_level}</strong>.
-                </div>
-                <div class="state-metrics">
-                    <span class="metric-chip">ZCR: ${bioData.mean_zcr?.toFixed(4) || '—'}</span>
-                    <span class="metric-chip">RMS Var: ${bioData.rms_variance?.toFixed(6) || '—'}</span>
-                    <span class="metric-chip">Energy: ${bioData.voice_energy_level}</span>
-                </div>
-                <div class="state-actions">
-                    <button class="state-btn confirm" onclick="confirmMentalState(true, this)">✅ Yes, that's right</button>
-                    <button class="state-btn reject" onclick="confirmMentalState(false, this)">❌ No, I'm fine</button>
-                </div>
-            `;
-
-            UI.transcript.appendChild(card);
-            UI.transcript.scrollTop = UI.transcript.scrollHeight;
-            activeBubble = null;
-            activeRole = null;
+        // ── Visualizer ──
+        function startVisualizer() {
+            const micData = new Uint8Array(micAnalyser.frequencyBinCount);
+            function render() {
+                if (!isCallActive) return;
+                micAnalyser.getByteFrequencyData(micData);
+                const micVol = micData.reduce((a, b) => a + b, 0) / micData.length;
+                
+                const micScale = 1.1 + (micVol / 255) * 0.3;
+                UI.callBtn.style.setProperty('--mic-scale', micScale);
+                visualizerId = requestAnimationFrame(render);
+            }
+            render();
         }
 
-        // ── Confirm / Reject Mental State ──
-        async function confirmMentalState(confirmed, btnElement) {
-            // Disable both buttons
-            const card = btnElement.closest('.mental-state-card');
-            const buttons = card.querySelectorAll('.state-btn');
-            buttons.forEach(b => b.disabled = true);
-
-            if (!pendingBiomarkerData || !currentUserId) {
-                addMessage('⚠️ Could not save — missing data.', 'system-msg');
-                return;
+        function startAiVisualizer() {
+            let t = 0;
+            function render() {
+                t += 0.1;
+                const scale = 1.2 + Math.sin(t) * 0.2;
+                UI.orbContainer.style.setProperty('--ai-scale', scale);
+                if (UI.orbContainer.classList.contains('speaking-mode')) {
+                    visualizerId = requestAnimationFrame(render);
+                }
             }
+            render();
+        }
+
+        // ── Wellness Modal Logic ──
+        function triggerWellnessPrompt(bioData) {
+            const icons = { stressed: 'warning', anxious: 'help_outline', fatigued: 'battery_alert', calm: 'self_improvement', unknown: 'question_mark' };
+            UI.wellnessIcon.innerText = icons[bioData.predicted_state] || 'psychology';
+            UI.wellnessTitle.innerText = `${bioData.predicted_state.charAt(0).toUpperCase() + bioData.predicted_state.slice(1)} Detected`;
+            UI.wellnessDesc.innerText = `Voice analysis suggests you might be feeling ${bioData.predicted_state}. Is this accurate?`;
+            UI.wellnessModal.classList.add('show');
+        }
+
+        async function confirmMentalState(confirmed) {
+            UI.wellnessModal.classList.remove('show');
+            if (!pendingBiomarkerData || !currentUserId) return;
 
             const payload = {
                 user_id: currentUserId,
@@ -1064,244 +812,72 @@
             };
 
             try {
-                const res = await fetch('http://127.0.0.1:5000/api/save_mental_state', {
+                await fetch('http://127.0.0.1:5000/api/save_mental_state', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                const result = await res.json();
-
-                if (result.success) {
-                    if (confirmed) {
-                        addMessage(`✅ Mental state "${pendingBiomarkerData.predicted_state}" saved to your profile.`, 'system-msg');
-                        // Show suggestions
-                        showSuggestions(pendingBiomarkerData.suggestions);
-
-                        // Handled purely on backend via in-memory state now
-                    } else {
-                        addMessage('👍 Got it — record saved as unconfirmed.', 'system-msg');
-                    }
-                } else {
-                    addMessage('⚠️ Failed to save: ' + result.message, 'system-msg');
-                }
             } catch (err) {
                 console.error("Save Error:", err);
-                addMessage('⚠️ Network error saving mental state.', 'system-msg');
             }
-
             pendingBiomarkerData = null;
         }
-
-        // Make confirmMentalState available globally for onclick
         window.confirmMentalState = confirmMentalState;
 
-        // ── Show Suggestions ──
-        function showSuggestions(suggestions) {
-            if (!suggestions || suggestions.length === 0) return;
-
-            const toast = document.createElement('div');
-            toast.className = 'suggestion-toast';
-            toast.innerHTML = `
-                <div class="toast-title">💡 Wellness Suggestions</div>
-                ${suggestions.map(s => `<div class="toast-item">${s}</div>`).join('')}
-            `;
-            UI.transcript.appendChild(toast);
-            UI.transcript.scrollTop = UI.transcript.scrollHeight;
-            activeBubble = null;
-            activeRole = null;
-        }
-
-        // ── Load History ──
+        // ── History Logic ──
         async function loadHistory() {
-            if (!currentUserId) return;
-
-            UI.historyContent.innerHTML = '<div class="history-empty"><p>Loading...</p></div>';
-
+            UI.historyContent.innerHTML = '<p style="color: var(--text-dim); text-align: center;">Loading...</p>';
             try {
                 const res = await fetch('http://127.0.0.1:5000/api/get_mental_state_history', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: currentUserId, limit: 15 })
+                    body: JSON.stringify({ user_id: currentUserId, limit: 10 })
                 });
                 const data = await res.json();
-
-                if (!data.success || !data.history || data.history.length === 0) {
-                    UI.historyContent.innerHTML = `
-                        <div class="history-empty">
-                            <div class="empty-icon">📊</div>
-                            <p>No mental state records yet.<br>Start a call to begin tracking.</p>
-                        </div>`;
+                
+                if (!data.success || data.history.length === 0) {
+                    UI.historyContent.innerHTML = '<p style="color: var(--text-dim); text-align: center;">No logs available.</p>';
                     return;
                 }
 
-                UI.historyContent.innerHTML = '';
-                for (const entry of data.history) {
-                    const el = createHistoryEntry(entry);
-                    UI.historyContent.appendChild(el);
-                }
-
+                UI.historyContent.innerHTML = data.history.map(entry => `
+                    <div class="history-item">
+                        <div class="history-item-header">
+                            <span class="history-state">${entry.predicted_state}</span>
+                            <span class="history-time">${new Date(entry.timestamp).toLocaleDateString()}</span>
+                        </div>
+                        <div class="history-details">
+                            <div style="display:flex; align-items:center; gap:0.25rem; margin-bottom: 0.5rem;">
+                                <span class="material-icons-round" style="font-size:1rem; color: ${entry.user_confirmed ? 'var(--success)' : 'var(--text-dim)'}">
+                                    ${entry.user_confirmed ? 'check_circle' : 'radio_button_unchecked'}
+                                </span>
+                                ${entry.user_confirmed ? 'Confirmed by you' : 'Unconfirmed'}
+                            </div>
+                            Energy: ${entry.voice_energy_level}
+                        </div>
+                    </div>
+                `).join('');
             } catch (err) {
-                console.error("History fetch error:", err);
-                UI.historyContent.innerHTML = `
-                    <div class="history-empty">
-                        <div class="empty-icon">⚠️</div>
-                        <p>Could not load history.<br>Make sure the API server is running.</p>
-                    </div>`;
+                UI.historyContent.innerHTML = '<p style="color: var(--danger); text-align: center;">Error loading history.</p>';
             }
         }
 
-        function createHistoryEntry(entry) {
-            const div = document.createElement('div');
-            div.className = 'history-entry';
-
-            const state = entry.predicted_state || 'unknown';
-            const confirmed = entry.user_confirmed;
-            const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Unknown time';
-
-            let suggestionsHtml = '';
-            if (entry.suggestions && entry.suggestions.length > 0) {
-                suggestionsHtml = `
-                    <div class="history-suggestions">
-                        <div class="history-suggestions-title">Suggestions Given</div>
-                        ${entry.suggestions.map(s => `<div class="history-suggestion-item">${s}</div>`).join('')}
-                    </div>`;
-            }
-
-            div.innerHTML = `
-                <div class="history-entry-header">
-                    <span class="history-state-badge ${state}">${state}</span>
-                    <span class="history-timestamp">${ts}</span>
-                </div>
-                <div class="history-confirmed">
-                    ${confirmed
-                        ? '<span class="check">✓</span> User confirmed'
-                        : '<span class="cross">✗</span> Not confirmed'}
-                </div>
-                <div class="history-metrics">
-                    <span class="metric-chip">ZCR: ${entry.mean_zcr?.toFixed(4) || '—'}</span>
-                    <span class="metric-chip">RMS: ${entry.rms_variance?.toFixed(6) || '—'}</span>
-                    <span class="metric-chip">Energy: ${entry.voice_energy_level || '—'}</span>
-                </div>
-                ${suggestionsHtml}
-            `;
-            return div;
-        }
-
-        // ── Visualizer Engine ──
-        function startVisualizer() {
-            const micData = new Uint8Array(micAnalyser.frequencyBinCount);
-            
-
-            function render() {
-                if (!isCallActive) return;
-
-                micAnalyser.getByteFrequencyData(micData);
-                
-
-                const micVol = micData.reduce((a, b) => a + b, 0) / micData.length;
-                const aiVol = 0;
-
-                const micScale = 1 + (micVol / 255) * 0.15;
-                const aiScale = 1 + (aiVol / 255) * 0.8;
-
-                UI.callBtn.style.setProperty('--mic-scale', micScale);
-                UI.orbContainer.style.setProperty('--ai-scale', aiScale);
-
-                visualizerId = requestAnimationFrame(render);
-            }
-            render();
-        }
-
-        // ── UI Helpers ──
-        function updateStatus(text, dotClass) {
+        // ── Helpers ──
+        function updateStatus(text) {
             UI.statusText.innerText = text;
-            UI.statusDot.className = `dot ${dotClass}`;
-        }
-
-        function addToolCard(text) {
-            const card = document.createElement('pre');
-            card.className = 'tool-card';
-            card.innerText = text;
-            UI.transcript.appendChild(card);
-            UI.transcript.scrollTop = UI.transcript.scrollHeight;
-            activeBubble = null;
-            activeRole = null;
         }
 
         function setSpeakingState(isSpeaking) {
             if (isSpeaking) {
-                UI.orbContainer.classList.add('speaking-mode');
-                updateStatus('Agent Speaking...', 'speaking');
-            } else {
-                UI.orbContainer.classList.remove('speaking-mode');
-                if (isCallActive) updateStatus('Listening...', 'live');
+                updateStatus('Tinkr is speaking...');
+            } else if (!isCallActive) {
+                updateStatus('Ready');
             }
         }
 
-        function addMessage(text, typeClass, isChunk = false) {
-            if (isChunk) {
-                if (activeBubble && activeRole === typeClass) {
-                    activeBubble.innerText += text;
-                    UI.transcript.scrollTop = UI.transcript.scrollHeight;
-                    return;
-                }
-                activeBubble = document.createElement('div');
-                activeBubble.className = `message ${typeClass}`;
-                activeBubble.innerText = text;
-                UI.transcript.appendChild(activeBubble);
-                activeRole = typeClass;
-            } else {
-                const msg = document.createElement('div');
-                msg.className = `message ${typeClass}`;
-                msg.innerText = text;
-                UI.transcript.appendChild(msg);
-                activeBubble = null;
-                activeRole = null;
-            }
-            UI.transcript.scrollTop = UI.transcript.scrollHeight;
-        }
-
-        // ── Chart Rendering ──
-        let chartInstance = null;
-        function renderChart(dataArr) {
-            const keys = Object.keys(dataArr[0]);
-            let labelKey = keys.find(k => typeof dataArr[0][k] === 'string') || keys[0];
-            let dataKey = keys.find(k => typeof dataArr[0][k] === 'number') || keys[1];
-
-            if (!dataKey) return;
-
-            UI.dashboard.classList.add('open');
-            UI.historyBtn.classList.add('active');
-
-            const ctx = document.getElementById('dataChart').getContext('2d');
-            if (chartInstance) chartInstance.destroy();
-
-            chartInstance = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: dataArr.map(row => row[labelKey]),
-                    datasets: [{
-                        label: dataKey.toUpperCase(),
-                        data: dataArr.map(row => row[dataKey]),
-                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                        borderColor: 'rgba(59, 130, 246, 1)',
-                        borderWidth: 1,
-                        borderRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.5)' } },
-                        x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.3)' } }
-                    },
-                    plugins: {
-                        legend: { labels: { color: '#f8fafc', font: { family: 'Inter' } } }
-                    }
-                }
-            });
+        function setStreamText(text, className) {
+            UI.transcriptStream.innerHTML = `<div class="${className}" style="animation: fade-in 0.3s ease forwards;">${text}</div>`;
         }
     </script>
 </body>
-
 </html>

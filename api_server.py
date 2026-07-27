@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from openai import OpenAI
+from groq import Groq
 
 # Tools
 from biomarker_tool import analyze_audio_biomarkers
@@ -29,6 +30,11 @@ client = OpenAI(
 )
 MODEL_NAME = "gemma-4-26b-a4b-it" 
 
+# Initialize Groq client for Whisper STT
+groq_client = Groq(
+    api_key=os.environ.get("GROQ_API_KEY", "dummy_key")
+)
+
 @app.route('/api/transcribe', methods=['POST'])
 def handle_transcribe():
     """
@@ -36,7 +42,7 @@ def handle_transcribe():
     """
     print("\n--- PIPELINE STEP 1: STT ---")
     if 'audio' not in request.files:
-        print("❌ [STT ERROR] No audio file provided in request.")
+        print(" [STT ERROR] No audio file provided in request.")
         return jsonify({"success": False, "message": "No audio file provided"}), 400
     
     audio_file = request.files['audio']
@@ -47,18 +53,16 @@ def handle_transcribe():
     
     try:
         # We can use the Groq Whisper API for insanely fast transcription
-        # For this hackathon, we are pointing OpenAI SDK to Groq Whisper if configured,
-        # but the request is to verify STT works robustly.
         with open(temp_path, "rb") as file:
-            transcription = client.audio.transcriptions.create(
-                file=file,
+            transcription = groq_client.audio.transcriptions.create(
+                file=(temp_path, file.read()),
                 model="whisper-large-v3-turbo",
                 response_format="text"
             )
         text = transcription
-        print(f"✅ [STT SUCCESS] Transcribed: '{text}'")
+        print(f" [STT SUCCESS] Transcribed: '{text}'")
     except Exception as e:
-        print(f"❌ [STT ERROR] Transcription failed: {e}")
+        print(f" [STT ERROR] Transcription failed: {e}")
         text = "Error during transcription."
         
     return jsonify({"success": True, "text": text})
@@ -155,7 +159,7 @@ When the user expresses an emotion, be empathetic and non-judgmental.
         }
     ]
 
-    print(f"💬 [CHAT REQUEST] Prompting {MODEL_NAME} for user '{user_id}'...")
+    print(f" [CHAT REQUEST] Prompting {MODEL_NAME} for user '{user_id}'...")
     
     try:
         response = client.chat.completions.create(
@@ -176,26 +180,26 @@ When the user expresses an emotion, be empathetic and non-judgmental.
                 
                 try:
                     function_args = json.loads(tool_call.function.arguments)
-                    print(f"🔧 [TOOL CALL] {function_name}({function_args})")
+                    print(f" [TOOL CALL] {function_name}({function_args})")
                     
                     if function_name == "check_availability":
                         print("--- PIPELINE STEP 4: GOOGLE CALENDAR TOOL ---")
                         function_response = str(check_availability(date_iso=function_args.get("date")))
-                        print(f"✅ [CALENDAR SUCCESS] {function_response}")
+                        print(f" [CALENDAR SUCCESS] {function_response}")
                     elif function_name == "book_meeting":
                         print("--- PIPELINE STEP 4: GOOGLE CALENDAR TOOL ---")
                         function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_email")))
-                        print(f"✅ [CALENDAR SUCCESS] {function_response}")
+                        print(f" [CALENDAR SUCCESS] {function_response}")
                     elif function_name == "search_web":
                         print("--- PIPELINE STEP 5: WEB SEARCH TOOL ---")
                         function_response = str(search_web(query=function_args.get("query")))
-                        print(f"✅ [SEARCH SUCCESS] Retrieved {len(function_response)} chars.")
+                        print(f" [SEARCH SUCCESS] Retrieved {len(function_response)} chars.")
                     elif function_name == "add_task":
                         function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
                     else:
                         function_response = "Unknown tool."
                 except Exception as ex:
-                    print(f"❌ [TOOL ERROR] Failed to execute {function_name}: {ex}")
+                    print(f" [TOOL ERROR] Failed to execute {function_name}: {ex}")
                     function_response = f"Error executing tool: {ex}"
                 
                 messages.append({
@@ -214,17 +218,17 @@ When the user expresses an emotion, be empathetic and non-judgmental.
         else:
             final_text = response_message.content
             
-        print(f"✅ [CHAT SUCCESS] Final response generated.")
+        print(f" [CHAT SUCCESS] Final response generated.")
         
         # Update history
         chat_histories[user_id].append({"role": "user", "content": user_text})
         chat_histories[user_id].append({"role": "assistant", "content": final_text})
         
     except Exception as e:
-        print(f"❌ [CHAT ERROR] {e}")
+        print(f" [CHAT ERROR] {e}")
         final_text = "I'm having trouble connecting to my brain right now."
 
-    print(f"✅ [CHAT RESPONSE] {final_text}")
+    print(f" [CHAT RESPONSE] {final_text}")
     print("--- PIPELINE STEP 6: TTS --- (Sent to frontend for Web Speech API playback)")
     return jsonify({"success": True, "text": final_text})
 
@@ -270,10 +274,10 @@ def handle_analyze_audio():
     data = request.json
     try:
         result = analyze_audio_biomarkers(base64_audio=data.get('audio_base64'))
-        print(f"✅ [EMOTION SUCCESS] Biomarkers analyzed. Alert: {result.get('alert')}")
+        print(f" [EMOTION SUCCESS] Biomarkers analyzed. Alert: {result.get('alert')}")
         return jsonify(result)
     except Exception as e:
-        print(f"❌ [EMOTION ERROR] Failed to analyze audio biomarkers: {e}")
+        print(f" [EMOTION ERROR] Failed to analyze audio biomarkers: {e}")
         return jsonify({"alert": False, "error": str(e)})
 
 @app.route('/api/save_mental_state', methods=['POST'])
@@ -298,7 +302,7 @@ def handle_save_mental_state():
     
     user_mental_states[user_id].insert(0, state_data) # Add to front (newest first)
     
-    print(f"✅ [IN-MEMORY STATE] Saved mental state for '{user_id}': {state_data['predicted_state']}")
+    print(f" [IN-MEMORY STATE] Saved mental state for '{user_id}': {state_data['predicted_state']}")
     return jsonify({"success": True, "message": "Mental state saved successfully."})
 
 @app.route('/api/get_mental_state_history', methods=['POST'])
@@ -346,5 +350,5 @@ def handle_get_mental_state_context():
     return jsonify({"success": True, "context": context})
 
 if __name__ == '__main__':
-    print("🚀 Tinkr API running on http://127.0.0.1:5000")
+    print(" Tinkr API running on http://127.0.0.1:5000")
     app.run(port=5000)

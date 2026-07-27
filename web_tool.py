@@ -4,7 +4,7 @@ def search_web(query: str) -> str:
     """
     Searches the web using DuckDuckGo and returns a summary of the results.
     """
-    print(f"\n🌐 [TOOL] Searching web for: {query}")
+    print(f"\n [TOOL] Searching web for: {query}")
     try:
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=3))
@@ -16,7 +16,7 @@ def search_web(query: str) -> str:
                 output += f"[{i+1}] Title: {result.get('title')}\nSnippet: {result.get('body')}\n\n"
             return output
     except Exception as e:
-        print(f"❌ [TOOL ERROR] Web search failed: {e}")
+        print(f" [TOOL ERROR] Web search failed: {e}")
         return f"Error searching the web: {e}"
 
 if __name__ == '__main__':
