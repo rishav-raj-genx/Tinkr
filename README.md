@@ -1,184 +1,628 @@
-# 🎙️ Tinkr — Production-Grade Gemini Live API Voice Agent Platform
+# Tinkr
 
-> Ultra-low latency, real-time conversational AI voice platform powered by Gemini Live API, FastAPI, WebSockets, and modular voice infrastructure.
+A real-time, bidirectional voice AI assistant powered by Google's Gemini Live API. Tinkr captures microphone audio directly in the browser, streams it over a WebSocket connection to Gemini, and plays back synthesized responses with ultra-low latency. A local Python backend bridges authenticated Google services — Calendar, Tasks, and a SQLite database — so the AI can take real actions on your behalf.
 
 ---
 
-# 🚀 Step 0 — Clone the Repository
+## Table of Contents
 
-First, clone the repository locally:
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Project Structure](#project-structure)
+4. [Request Flow](#request-flow)
+5. [Prerequisites](#prerequisites)
+6. [Local Setup](#local-setup)
+   - [Step 1: Clone the Repository](#step-1-clone-the-repository)
+   - [Step 2: Create a Virtual Environment](#step-2-create-a-virtual-environment)
+   - [Step 3: Install Dependencies](#step-3-install-dependencies)
+   - [Step 4: Configure Environment Variables](#step-4-configure-environment-variables)
+   - [Step 5: Configure Google Cloud Credentials](#step-5-configure-google-cloud-credentials)
+   - [Step 6: Authorize Google Services](#step-6-authorize-google-services-generate-tokenjson)
+   - [Step 7: Provide the Gemini API Key](#step-7-provide-the-gemini-api-key)
+7. [Running the Application](#running-the-application)
+8. [API Reference](#api-reference)
+9. [Tool Modules](#tool-modules)
+10. [Environment Variables Reference](#environment-variables-reference)
+11. [Troubleshooting](#troubleshooting)
+
+---
+
+## Overview
+
+Tinkr is split into two independent layers that communicate with each other and with external services.
+
+**Frontend (Browser, Port 8000)**
+
+- Captures microphone input as raw 16 kHz PCM mono audio
+- Manages the WebSocket connection directly to the Gemini Live API using the `BidiGenerateContent` protocol
+- Renders a real-time visual orb and a scrolling log of tool activity
+- Supports active barge-in: the user can interrupt Tinkr mid-sentence
+- Handles text-to-speech playback of Gemini responses via the Web Speech API
+
+**Backend (Python / Flask, Port 5000)**
+
+- Protects long-lived OAuth tokens from being exposed in the browser
+- Provides REST endpoints that the Gemini function-calling workflow invokes
+- Performs voice biomarker analysis using Zero Crossing Rate, RMS Energy, and Spectral Centroid to detect user mental state
+- Maintains per-user in-memory chat history and wellness state
+
+---
+
+## Architecture
+
+```
+Browser (index.html)                  Python Backend (api_server.py)
+        |                                          |
+        |-- 16kHz PCM audio (WebSocket) ---------> Gemini Live API
+        |                                          |
+        |<-- Synthesized audio chunks ------------ Gemini Live API
+        |
+        |-- POST /api/transcribe ----------------> Whisper (via OpenAI-compatible SDK)
+        |
+        |-- POST /api/chat ----------------------> Gemma 4 (Google AI Studio)
+        |                                          |
+        |                               +----------+----------+
+        |                               |          |          |
+        |                        Google Calendar  DuckDuckGo  SQLite DB
+        |                        Google Tasks     Search
+        |
+        |-- POST /api/analyze_audio -----------> biomarker_tool.py (librosa)
+        |-- POST /api/save_mental_state
+        |-- POST /api/get_mental_state_context
+```
+
+The browser communicates with Gemini directly for streaming audio. The Python backend is only invoked for tool execution (calendar, tasks, search, database) and for the voice biomarker analysis pipeline. This design keeps latency minimal while keeping sensitive OAuth credentials server-side.
+
+---
+
+## Project Structure
+
+```
+Tinkr/
+|
+|-- index.html              Single-page frontend: WebSocket audio pipeline,
+|                           visualizer orb, tool log UI, and Web Speech TTS.
+|
+|-- api_server.py           Flask REST API. Handles the chat pipeline with
+|                           Gemma 4, tool routing, transcription via Whisper,
+|                           biomarker analysis, and mental state storage.
+|
+|-- auth_server.py          One-time OAuth authorization server. Run this once
+|                           to generate token.json. Do not run in production.
+|
+|-- biomarker_tool.py       Voice biomarker analysis using librosa. Extracts ZCR,
+|                           RMS energy, and spectral centroid to predict mental
+|                           states: calm, stressed, anxious, or fatigued.
+|
+|-- calendar_tool.py        Google Calendar integration.
+|                           Functions: check_availability(), book_meeting().
+|                           Reads from token.json generated by auth_server.py.
+|
+|-- tasks_tool.py           Google Tasks integration.
+|                           Functions: add_task(), list_tasks().
+|                           Shares the same token.json credential file.
+|
+|-- sql_tool.py             SQLite read-only query interface.
+|                           Functions: get_database_schema(), execute_sql_query().
+|                           Only SELECT statements are permitted.
+|
+|-- web_tool.py             DuckDuckGo web search wrapper.
+|                           Function: search_web(query) returns the top 3 results.
+|
+|-- setup_db.py             Utility script to initialize company_data.db with
+|                           sample data for SQL tool demonstrations.
+|
+|-- requirements.txt        Python package dependencies with pinned versions.
+|-- .env                    Environment variables. Not committed to version control.
+|-- token.json              Google OAuth token generated once. Not committed to git.
+|-- .gitignore
+```
+
+---
+
+## Request Flow
+
+The following describes the complete lifecycle of a single voice interaction from the moment the user speaks to when Tinkr responds.
+
+### Phase 1: Audio Capture and Streaming
+
+1. The user clicks the microphone button in `index.html`.
+2. The browser requests access to the user's microphone via `getUserMedia`.
+3. Raw audio is captured at 16 kHz, mono, PCM format.
+4. Simultaneously, the frontend opens a WebSocket connection to the Gemini Live API (`wss://generativelanguage.googleapis.com`) using the Gemini API key entered by the user at startup.
+5. PCM audio chunks are continuously streamed to Gemini over this WebSocket connection as they are recorded.
+
+### Phase 2: Parallel Biomarker Analysis
+
+6. While audio is streaming to Gemini, the frontend also sends a copy of the audio buffer to `POST /api/analyze_audio` on the Python backend.
+7. `biomarker_tool.py` decodes the base64 audio, runs librosa feature extraction (ZCR, RMS, Spectral Centroid), and classifies the user's mental state.
+8. If an anomalous state is detected such as stressed, anxious, or fatigued, an alert message is composed and stored in memory.
+9. On the next chat turn, this emotional context is injected into the system prompt sent to Gemma 4.
+
+### Phase 3: Gemini Reasoning and Tool Calls
+
+10. Gemini processes the streaming audio and emits a response event when it determines the user has finished speaking.
+11. If Gemini decides to invoke a tool such as `check_availability`, it sends a `toolCall` event over the WebSocket.
+12. The frontend intercepts this event and dispatches a corresponding HTTP POST request to the appropriate endpoint on the Python backend.
+
+### Phase 4: Tool Execution
+
+13. `api_server.py` receives the tool request and routes it:
+    - `check_availability` and `book_meeting` route to `calendar_tool.py` which calls the Google Calendar API
+    - `add_task` and `list_tasks` route to `tasks_tool.py` which calls the Google Tasks API
+    - `search_web` routes to `web_tool.py` which queries DuckDuckGo
+    - `get_schema` and `execute_sql` route to `sql_tool.py` which queries `company_data.db`
+14. The tool result is returned as a JSON response to the frontend.
+15. The frontend sends the tool result back to Gemini over the existing WebSocket connection as a `toolResponse` message.
+
+### Phase 5: Response Synthesis and Playback
+
+16. Gemini receives the tool result, formulates a natural-language response, and streams synthesized audio back over the WebSocket.
+17. The browser receives the audio chunks and queues them for playback.
+18. The user hears Tinkr's spoken response.
+19. The interaction log on screen is updated with tool call cards and status indicators in real time.
+
+---
+
+## Prerequisites
+
+- Python 3.9 or higher
+- Google Chrome (required for microphone access and Web Speech API support over HTTP localhost)
+- A Google Cloud project with the Calendar API and Tasks API enabled
+- A Gemini API key from Google AI Studio (free tier is sufficient)
+- `pip` or `pip3` available in your terminal
+
+---
+
+## Local Setup
+
+### Step 1: Clone the Repository
 
 ```bash
 git clone https://github.com/coder-irwin/voice_ai_agents_using-Gemini_live_api.git
-```
-
-Move into the project directory:
-```bash
 cd voice_ai_agents_using-Gemini_live_api
 ```
 
-📦 Step 1 — Create Virtual Environment
+### Step 2: Create a Virtual Environment
 
-Windows
-```bash
-python -m venv venv
+Using a virtual environment prevents dependency conflicts with other Python projects on your system.
 
-venv\Scripts\activate
-```
-
-macOS / Linux
+**macOS / Linux:**
 ```bash
 python3 -m venv venv
-
 source venv/bin/activate
 ```
 
----
-
-Tinkr is an ultra-low latency, bidirectional streaming voice assistant that integrates the **Gemini Live API** (`BidiGenerateContent` WebSocket protocol) with **Google Calendar** for automated schedule checking and meeting booking.
-
-This repository contains the production-ready full-stack core, split into:
-1. **Interactive Glassmorphic UI (Frontend):** Manages user media devices, WebRTC audio streams, continuous WebSocket piping, active barge-in (interruption), and a visual visualizer orb.
-2. **Secure Python Gateway (Backend):** Protects long-term OAuth keys (`token.json`) and handles standard API calendar queries.
-
----
-
-## 🗺️ Architectural Flow
-
-Here is how Tinkr orchestrates real-time communication between your web browser, Google's Gemini Bidirectional WebSocket service, a local API bridge, and the Google Calendar API:
-
-```
-🗣️ User (Voice/Mic) 
-       │
-       ▼ (16kHz PCM Mono)
-🖥️ Web Browser UI (index.html on Port 8000) ───[WebSocket WSS]───► 🤖 Gemini Live API
-       │                                                                │
-       ▼ (Intercepts function call JSON)                                ▼ (Emits toolCall event)
-🐍 Python API Server (api_server.py on Port 5000) ◄───────────────────────┘
-       │
-       ▼ (Google API Call with token.json)
-📅 Google Calendar
+**Windows:**
+```powershell
+python -m venv venv
+venv\Scripts\activate
 ```
 
----
+### Step 3: Install Dependencies
 
-## 🚀 Installation & Prerequisites
+**macOS / Linux:**
+```bash
+pip3 install -r requirements.txt
+```
 
-To run this application independently and hassle-free on any device (**Windows, macOS, or Linux**), follow the step-by-step setup below.
+**Windows:**
+```powershell
+pip install -r requirements.txt
+```
 
-### Step 1: Install Dependencies
-Open your terminal inside the project directory and run the command matching your operating system to install the required Python packages:
+Key packages installed:
 
-* **Windows:**
-  ```powershell
-  pip install -r requirements.txt
-  ```
-* **macOS / Linux:**
-  ```bash
-  pip3 install -r requirements.txt
-  ```
+| Package | Purpose |
+|---|---|
+| `flask`, `flask-cors` | REST API server for the Python backend |
+| `google-api-python-client` | Communicates with Google Calendar and Tasks APIs |
+| `google-auth-oauthlib` | Handles the OAuth 2.0 flow to generate `token.json` |
+| `openai` | OpenAI-compatible SDK used to call Gemma 4 on Google AI Studio |
+| `librosa`, `numpy` | Audio feature extraction for biomarker analysis |
+| `duckduckgo-search` | Web search capability |
+| `python-dotenv` | Loads `.env` configuration at startup |
+| `websockets` | WebSocket support library |
 
-> [!NOTE]
-> The dependencies include `flask`, `flask-cors`, `google-api-python-client`, `google-auth-oauthlib`, and other standard helpers required to securely bridge the browser to the calendar APIs.
+### Step 4: Configure Environment Variables
 
----
-
-## 🔑 Google Cloud API Credentials Configuration
-
----
-
-### Step 2: Configure your `.env` File
-Create a file named `.env` in the root directory of your project and populate it with the following configuration variables:
+Create a file named `.env` in the project root directory. This file must never be committed to version control.
 
 ```ini
-GOOGLE_CLIENT_ID=your_google_oauth_client_id
-GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+# Google OAuth 2.0 credentials (obtained from Google Cloud Console)
+GOOGLE_CLIENT_ID=your_google_oauth_client_id_here
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret_here
 GOOGLE_REDIRECT_URI=http://localhost:8000/auth/callback
+
+# The Google Calendar and email address to read and write events to
 HOST_CALENDAR_ID=your_email@gmail.com
 HOST_EMAIL=your_email@gmail.com
+
+# URL of the running frontend (used for CORS and redirect configuration)
 FRONTEND_URL=http://localhost:8000
-SECRET_KEY=your_random_secret_key_for_sessions
+
+# A random secret string used for Flask session signing
+SECRET_KEY=replace_this_with_a_long_random_string
+
+# Google AI Studio API key used by api_server.py for the Gemma 4 chat pipeline
+API_KEY=your_google_ai_studio_api_key_here
+```
+
+### Step 5: Configure Google Cloud Credentials
+
+The backend requires OAuth 2.0 credentials to interact with Google Calendar and Tasks on your behalf.
+
+**5.1 — Enable the required APIs**
+
+1. Open the [Google Cloud Console](https://console.cloud.google.com/).
+2. Select or create a project.
+3. Navigate to **APIs and Services > Library**.
+4. Search for and enable both **Google Calendar API** and **Google Tasks API**.
+
+**5.2 — Create an OAuth 2.0 client**
+
+1. In the Cloud Console, go to **APIs and Services > Credentials**.
+2. Click **Create Credentials** and select **OAuth client ID**.
+3. Set the **Application type** to **Web application**.
+4. Under **Authorized JavaScript origins**, add:
+   ```
+   http://localhost:8000
+   ```
+5. Under **Authorized redirect URIs**, add:
+   ```
+   http://localhost:8000/auth/callback
+   ```
+6. Click **Create**. Copy the **Client ID** and **Client Secret** into your `.env` file as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+**5.3 — Add a test user to the OAuth consent screen**
+
+Because the application is in testing mode, only explicitly added accounts can authorize it.
+
+1. In the Cloud Console, go to **APIs and Services > OAuth consent screen**.
+2. Scroll to the **Test users** section and click **Add Users**.
+3. Enter the Gmail address of the Google account whose calendar Tinkr should access.
+
+### Step 6: Authorize Google Services (Generate token.json)
+
+`token.json` is the long-lived OAuth credential file the backend uses to call Google APIs. You generate it once by running `auth_server.py`. This is a one-time setup step.
+
+**macOS / Linux:**
+```bash
+python3 auth_server.py
+```
+
+**Windows:**
+```powershell
+python auth_server.py
+```
+
+This starts a temporary web server on port 8000. Follow these steps:
+
+1. Open `http://localhost:8000` in your browser.
+2. Click **Click here to Authorize Google Calendar**.
+3. Sign in with the Google account you added as a test user in Step 5.3.
+4. Grant the requested permissions for Calendar Events and Tasks.
+5. When the browser shows the success message, return to the terminal and press `Ctrl+C` to stop `auth_server.py`.
+
+A `token.json` file will now exist in the project root. Do not commit this file. It contains your OAuth refresh token.
+
+### Step 7: Provide the Gemini API Key
+
+The Gemini API key is the credential that allows the browser to connect directly to the Gemini Live API for real-time audio streaming. It is entered at runtime in the browser UI, not stored in any server-side file.
+
+**How to obtain a Gemini API key:**
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey).
+2. Sign in with your Google account.
+3. Click **Create API key** and copy the generated key.
+
+**How to use it:**
+
+When you open `http://localhost:8000` in Chrome after starting both servers, an input prompt will appear asking for the Gemini API key. Paste the key and click **Connect**. The key is used exclusively in the browser to authenticate the WebSocket connection to Gemini and is never transmitted to or stored by the Python backend.
+
+---
+
+## Running the Application
+
+The application requires two terminal windows running simultaneously.
+
+**Terminal 1 — Start the Python API Server:**
+
+```bash
+# macOS / Linux
+python3 api_server.py
+
+# Windows
+python api_server.py
+```
+
+Expected output when the server starts:
+
+```
+Tinkr API running on http://127.0.0.1:5000
+ * Running on http://127.0.0.1:5000
+ * Running on http://[::1]:5000
+```
+
+Keep this terminal open. All tool execution, chat requests, and biomarker analysis go through this server.
+
+**Terminal 2 — Serve the Frontend:**
+
+```bash
+# macOS / Linux
+python3 -m http.server 8000
+
+# Windows
+python -m http.server 8000
+```
+
+Expected output:
+
+```
+Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+```
+
+**Using the application:**
+
+1. Open **Google Chrome** and navigate to `http://localhost:8000`.
+2. When prompted, paste your Gemini API key and click **Connect**.
+3. Click the microphone button and speak naturally. Example: *"Tinkr, check if my calendar is free tomorrow afternoon, and if so, book a meeting at 3 PM."*
+4. Tinkr will check your calendar, determine availability, and create the meeting through voice.
+
+Always access the frontend using `http://localhost:8000` and not `http://127.0.0.1:8000`. Chrome enforces secure context rules that allow microphone access on the `localhost` hostname but may restrict it on other origins without HTTPS.
+
+---
+
+## API Reference
+
+All endpoints are served by `api_server.py` on port 5000. All requests and responses use JSON unless otherwise noted.
+
+### POST /api/transcribe
+
+Transcribes an audio file to text using the Whisper model via the OpenAI-compatible SDK.
+
+**Request:** `multipart/form-data` with an `audio` file field in WebM format.
+
+**Response:**
+```json
+{
+  "success": true,
+  "text": "Transcribed text content"
+}
 ```
 
 ---
 
-### Step 3: Enable Google Calendar API
-1. Go to the **Google Calendar API** page in the Google Cloud Console:
-   👉 **[Google Calendar API Console](https://console.cloud.google.com/marketplace/product/google/calendar-json.googleapis.com)**
-2. Select your Google Cloud Project.
-3. Click the blue **Enable** button.
-4. After enabling, click **Manage**, and select the **Credentials** tab from the left sidebar.
+### POST /api/chat
+
+The primary reasoning endpoint. Sends a text message to the Gemma 4 model with tool-use enabled. The model may invoke one or more tools before returning a final natural-language response. Chat history is maintained in memory per `user_id`.
+
+**Request:**
+```json
+{
+  "text": "What meetings do I have tomorrow?",
+  "user_id": "user123",
+  "emotion_context": "Optional emotional context string from biomarker analysis"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "text": "You have a standup at 10 AM and a design review at 2 PM tomorrow."
+}
+```
 
 ---
 
-### Step 4: Create OAuth 2.0 Credentials
-1. Click **`+ Create credentials`** at the top of the Credentials page, then select **`OAuth client ID`**.
-2. For **Application type**, select **`Web application`**.
-3. Name your application **`Calendar Integration`**.
-4. Scroll down to configure the redirect paths:
-   * **Authorized JavaScript origins:**
-     ```text
-     http://localhost:8000
-     ```
-   * **Authorized redirect URIs:**
-     ```text
-     http://localhost:8000/auth/callback
-     ```
-5. Click **Create** and copy your **Client ID** and **Client Secret** into your `.env` file.
-6. **Enable User Access:** In the Cloud Console left sidebar, click **OAuth consent screen**. Scroll to the **Test users** section, click **Add Users**, and enter your login email address (the calendar account you want to give access to).
+### POST /api/analyze_audio
+
+Analyzes raw PCM audio for voice biomarkers to predict the user's mental state.
+
+**Request:**
+```json
+{
+  "audio_base64": "base64_encoded_pcm_audio_data"
+}
+```
+
+**Response:**
+```json
+{
+  "alert": true,
+  "predicted_state": "stressed",
+  "voice_energy_level": "high",
+  "mean_zcr": 0.0912,
+  "rms_variance": 0.000312,
+  "message": "System prompt injection string describing the detected state",
+  "suggestions": ["Try deep breathing: inhale 4 seconds, hold 4, exhale 6"]
+}
+```
 
 ---
 
-### Step 5: Generate OAuth Credentials (`token.json`)
-The backend needs local calendar write authorization. We spin up a temporary authentication listener to retrieve the secure token.
+### POST /api/save_mental_state
 
-Start the authentication server:
+Saves a mental state record for a user to in-memory storage. Records are stored newest-first and capped automatically by the history retrieval limit.
 
-* **Windows:**
-  ```powershell
-  python auth_server.py
-  ```
-* **macOS / Linux:**
-  ```bash
-  python3 auth_server.py
-  ```
-
-1. Open **`http://localhost:8000`** in your browser.
-2. Click **Authorize Google Calendar** and sign in using your designated Google account.
-3. Once the dashboard shows success, close the page and press `Ctrl+C` in your terminal to shut down the server. 
-4. A secure **`token.json`** file will now be populated in your project root!
+**Request:**
+```json
+{
+  "user_id": "user123",
+  "predicted_state": "stressed",
+  "user_confirmed": true,
+  "mean_zcr": 0.09,
+  "rms_variance": 0.0003,
+  "voice_energy_level": "high",
+  "suggestions": []
+}
+```
 
 ---
 
-## 🎙️ Running the Live Assistant
+### POST /api/get_mental_state_history
 
-To initiate the fully autonomous real-time voice experience, start both the secure Python calendar controller and serve the UI:
+Returns recent mental state records for a given user.
 
-### 1. Launch the Secure Calendar API Bridge (Terminal Window 1)
-* **Windows:**
-  ```powershell
-  python api_server.py
-  ```
-* **macOS / Linux:**
-  ```bash
-  python3 api_server.py
-  ```
-*(Starts the bridge listening securely on port `5000`)*
+**Request:**
+```json
+{
+  "user_id": "user123",
+  "limit": 10
+}
+```
 
-### 2. Serve the UI Dashboard (Terminal Window 2)
-* **Windows:**
-  ```powershell
-  python -m http.server 8000
-  ```
-* **macOS / Linux:**
-  ```bash
-  python3 -m http.server 8000
-  ```
-*(Serves your interactive interface on port `8000`)*
+---
 
-### 3. Connect & Converse!
-1. Navigate to: **`http://localhost:8000`** in Google Chrome. *(Always access using `localhost` so the browser allows microphone media stream access over HTTP).*
-2. Paste your **Gemini API Key** into the prompt and click connect.
-3. Click the **🎙️** button and speak naturally:
-   > *"Hi Charon, check if my calendar is free tomorrow, and if I have time in the afternoon, please book a Tinkr demo!"*
-4. View the scrolling console logs and interactive tool cards in real-time as Gemini checks slots, determines availability, and pushes the booking to your Google Calendar!
+### POST /api/get_mental_state_context
+
+Returns a formatted text summary of recent mental state history suitable for injection into an LLM system prompt.
+
+**Request:**
+```json
+{ "user_id": "user123" }
+```
+
+---
+
+### POST /api/check_availability
+
+Checks the Google Calendar for existing events on a given date.
+
+**Request:**
+```json
+{ "date": "2026-07-28T00:00:00+05:30" }
+```
+
+---
+
+### POST /api/book_meeting
+
+Creates a 30-minute meeting on the Google Calendar.
+
+**Request:**
+```json
+{
+  "date_time": "2026-07-28T15:00:00+05:30",
+  "guest_email": "guest@example.com"
+}
+```
+
+---
+
+### POST /api/add_task
+
+Adds a task to the Google Tasks primary list.
+
+**Request:**
+```json
+{
+  "title": "Review the project proposal",
+  "notes": "Due by end of week"
+}
+```
+
+---
+
+### POST /api/list_tasks
+
+Returns the top 10 pending tasks from the Google Tasks primary list.
+
+**Request:** No body required.
+
+---
+
+### POST /api/get_schema
+
+Returns the schema of the local SQLite database (`company_data.db`) as a JSON object mapping table names to column definitions.
+
+---
+
+### POST /api/execute_sql
+
+Executes a read-only SELECT query against the local SQLite database and returns the rows as a JSON array.
+
+**Request:**
+```json
+{ "query": "SELECT * FROM employees WHERE department = 'Engineering'" }
+```
+
+Only SELECT statements are accepted. Any other statement type is rejected with an error.
+
+---
+
+## Tool Modules
+
+Each tool module is an independent Python file that can be imported and tested in isolation from the rest of the application.
+
+### biomarker_tool.py
+
+Analyzes voice characteristics to estimate mental state. Uses librosa to extract three acoustic features from 16 kHz PCM audio:
+
+- **Zero Crossing Rate (ZCR):** Measures how frequently the audio signal crosses zero. Higher values indicate breathiness or vocal tension.
+- **RMS Energy Variance:** Measures micro-tremors in amplitude. High variance suggests agitation or stress.
+- **Spectral Centroid:** Measures the brightness of the voice. Higher values correlate with tense or elevated emotional states.
+
+Classification thresholds applied in order:
+
+| Condition | Predicted State |
+|---|---|
+| ZCR > 0.08 and RMS variance > 0.0002 | Stressed |
+| ZCR > 0.06 and Centroid > 2500 Hz | Anxious |
+| ZCR > 0.05 or RMS variance > 0.0001 | Stressed |
+| Voice energy low and ZCR < 0.03 | Fatigued |
+| None of the above | Calm |
+
+### calendar_tool.py
+
+Reads `token.json` at runtime to authenticate with Google Calendar. The `HOST_CALENDAR_ID` value from `.env` determines which calendar is queried and written to. Both `check_availability` and `book_meeting` use cross-version compatible ISO 8601 datetime parsing to support Python 3.9 and above.
+
+### tasks_tool.py
+
+Uses the same `token.json` credential to interact with Google Tasks. `add_task` inserts into the default task list. `list_tasks` returns up to 10 pending tasks.
+
+### web_tool.py
+
+Wraps the `duckduckgo-search` library. Performs a text search and returns the top 3 results formatted as a numbered list of titles and snippets. No API key is required.
+
+### sql_tool.py
+
+Provides a read-only SQL interface to `company_data.db`. The `get_database_schema` function returns table and column definitions so the language model can construct valid queries autonomously without prior knowledge of the schema. Only SELECT statements are allowed to execute.
+
+---
+
+## Environment Variables Reference
+
+| Variable | Required | Description |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 Client ID from Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 Client Secret from Google Cloud Console |
+| `GOOGLE_REDIRECT_URI` | Yes | OAuth redirect URI. Must match exactly what is set in Cloud Console |
+| `HOST_CALENDAR_ID` | Yes | Gmail address of the calendar to read from and write to |
+| `HOST_EMAIL` | Yes | Gmail address of the calendar owner |
+| `FRONTEND_URL` | Yes | Base URL of the frontend. Used for CORS headers |
+| `SECRET_KEY` | Yes | Random secret string for Flask session cookie signing |
+| `API_KEY` | Yes | Google AI Studio API key used by the backend to call Gemma 4 |
+
+---
+
+## Troubleshooting
+
+**Microphone access is blocked in the browser.**
+Always open the application using `http://localhost:8000`, not `http://127.0.0.1:8000`. Chrome enforces secure context rules that allow microphone access on the `localhost` hostname. Using the IP address may trigger permission restrictions.
+
+**`token.json` not found error from the backend.**
+Run `auth_server.py` and complete the Google OAuth authorization flow before starting `api_server.py`. The file must exist in the project root.
+
+**Calendar tool returns "Failed to check availability".**
+Verify that the Google account authorized via `auth_server.py` matches the email set in `HOST_CALENDAR_ID`. Also confirm that both the Calendar API and Tasks API are enabled in your Google Cloud project.
+
+**Connecting with the Gemini API key fails.**
+Verify the key is valid at [Google AI Studio](https://aistudio.google.com/apikey). Ensure there are no leading or trailing spaces when pasting. The Gemini Live API requires access to a model that supports the Live API protocol such as `gemini-2.0-flash-live-001`.
+
+**`pip install -r requirements.txt` fails on `librosa` or `PyAudio`.**
+On macOS, install PortAudio first: `brew install portaudio`. On Linux, install: `sudo apt-get install portaudio19-dev python3-pyaudio`. Then retry the pip install command.
+
+**The `/api/chat` endpoint responds with "I'm having trouble connecting to my brain".**
+The `API_KEY` variable in your `.env` file is missing or invalid. This key is required by `api_server.py` to reach Gemma 4 on Google AI Studio. Confirm the key is present and correct.
