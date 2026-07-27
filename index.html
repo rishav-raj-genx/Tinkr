@@ -589,8 +589,8 @@
         let recognition = null;
         if (SpeechRecognition) {
             recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
+            recognition.continuous = true;
+            recognition.interimResults = true;
         }
         let audioChunks = [];
         let mediaStream = null;
@@ -639,14 +639,19 @@
                     startVisualizer();
                     
                     if (recognition) {
+                        window.currentTranscript = "";
                         recognition.onresult = (event) => {
-                            const transcript = event.results[0][0].transcript;
-                            isCallActive = false;
-                            resetCallBtnUI();
-                            if (mediaStream) {
-                                mediaStream.getTracks().forEach(t => t.stop());
+                            let interimTranscript = '';
+                            let finalTranscript = '';
+                            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                                if (event.results[i].isFinal) {
+                                    finalTranscript += event.results[i][0].transcript;
+                                } else {
+                                    interimTranscript += event.results[i][0].transcript;
+                                }
                             }
-                            processText(transcript);
+                            window.currentTranscript += finalTranscript;
+                            setStreamText(window.currentTranscript + interimTranscript, "user-text");
                         };
                         recognition.onerror = (event) => {
                             console.error("Speech Recognition Error:", event.error);
@@ -655,12 +660,14 @@
                             setStreamText("Microphone access denied or error.", "system-text");
                         };
                         recognition.onend = () => {
-                            if (isCallActive) {
-                                isCallActive = false;
-                                resetCallBtnUI();
-                                if (mediaStream) {
-                                    mediaStream.getTracks().forEach(t => t.stop());
-                                }
+                            if (window.currentTranscript.trim()) {
+                                processText(window.currentTranscript.trim());
+                                window.currentTranscript = "";
+                            }
+                            isCallActive = false;
+                            resetCallBtnUI();
+                            if (mediaStream) {
+                                mediaStream.getTracks().forEach(t => t.stop());
                             }
                         };
                         recognition.start();

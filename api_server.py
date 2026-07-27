@@ -284,7 +284,7 @@ WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an
                                     safe_text = thought_buffer[:start_idx]
                                     if safe_text:
                                         full_text += safe_text
-                                        yield f"data: {json.dumps({'text': safe_text})}\\n\\n"
+                                        yield f"data: {json.dumps({'text': safe_text})}\n\n"
                                     thought_buffer = thought_buffer[start_idx:]
                                     in_thought = True
                                 else:
@@ -293,12 +293,12 @@ WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an
                                         break # Wait for more chunks to resolve potential tag
                                     else:
                                         full_text += thought_buffer
-                                        yield f"data: {json.dumps({'text': thought_buffer})}\\n\\n"
+                                        yield f"data: {json.dumps({'text': thought_buffer})}\n\n"
                                         thought_buffer = ""
                                         
             if thought_buffer and not in_thought and '<' not in thought_buffer:
                 full_text += thought_buffer
-                yield f"data: {json.dumps({'text': thought_buffer})}\\n\\n"
+                yield f"data: {json.dumps({'text': thought_buffer})}\n\n"
                 
             chat_histories[user_id].append({"role": "user", "content": user_text})
             chat_histories[user_id].append({"role": "assistant", "content": full_text.strip()})
@@ -307,7 +307,7 @@ WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an
             import traceback
             traceback.print_exc()
             print(f" [CHAT STREAM ERROR] {e}")
-            yield f"data: {json.dumps({'error': str(e)})}\\n\\n"
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
             
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
