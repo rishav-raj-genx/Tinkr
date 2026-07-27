@@ -1,4 +1,4 @@
-# 🎙️ NovaVoice AI — Production-Grade Gemini Live API Voice Agent Platform
+# 🎙️ Tinkr — Production-Grade Gemini Live API Voice Agent Platform
 
 > Ultra-low latency, real-time conversational AI voice platform powered by Gemini Live API, FastAPI, WebSockets, and modular voice infrastructure.
 
@@ -35,7 +35,7 @@ source venv/bin/activate
 
 ---
 
-NovaVoice is an ultra-low latency, bidirectional streaming voice assistant that integrates the **Gemini Live API** (`BidiGenerateContent` WebSocket protocol) with **Google Calendar** for automated schedule checking and meeting booking.
+Tinkr is an ultra-low latency, bidirectional streaming voice assistant that integrates the **Gemini Live API** (`BidiGenerateContent` WebSocket protocol) with **Google Calendar** for automated schedule checking and meeting booking.
 
 This repository contains the production-ready full-stack core, split into:
 1. **Interactive Glassmorphic UI (Frontend):** Manages user media devices, WebRTC audio streams, continuous WebSocket piping, active barge-in (interruption), and a visual visualizer orb.
@@ -45,7 +45,7 @@ This repository contains the production-ready full-stack core, split into:
 
 ## 🗺️ Architectural Flow
 
-Here is how NovaVoice orchestrates real-time communication between your web browser, Google's Gemini Bidirectional WebSocket service, a local API bridge, and the Google Calendar API:
+Here is how Tinkr orchestrates real-time communication between your web browser, Google's Gemini Bidirectional WebSocket service, a local API bridge, and the Google Calendar API:
 
 ```
 🗣️ User (Voice/Mic) 
@@ -180,5 +180,5 @@ To initiate the fully autonomous real-time voice experience, start both the secu
 1. Navigate to: **`http://localhost:8000`** in Google Chrome. *(Always access using `localhost` so the browser allows microphone media stream access over HTTP).*
 2. Paste your **Gemini API Key** into the prompt and click connect.
 3. Click the **🎙️** button and speak naturally:
-   > *"Hi Charon, check if my calendar is free tomorrow, and if I have time in the afternoon, please book a NovaVoice demo!"*
+   > *"Hi Charon, check if my calendar is free tomorrow, and if I have time in the afternoon, please book a Tinkr demo!"*
 4. View the scrolling console logs and interactive tool cards in real-time as Gemini checks slots, determines availability, and pushes the booking to your Google Calendar!

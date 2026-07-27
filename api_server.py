@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime, timezone
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from openai import OpenAI
@@ -9,7 +10,6 @@ from biomarker_tool import analyze_audio_biomarkers
 from calendar_tool import book_meeting, check_availability
 from tasks_tool import add_task, list_tasks
 from sql_tool import get_database_schema, execute_sql_query
-from firebase_tool import save_mental_state, get_mental_state_history, get_mental_state_context
 from web_tool import search_web
 
 app = Flask(__name__)
@@ -18,19 +18,25 @@ CORS(app)
 from dotenv import load_dotenv
 load_dotenv()
 
-# Initialize OpenAI client for Fireworks AI
+# In-memory storage for Tinkr hackathon (NO Firebase)
+user_mental_states = {} # user_id -> list of state_data dicts
+chat_histories = {}     # user_id -> list of message dicts
+
+# Initialize OpenAI client for Google AI Studio (Gemini)
 client = OpenAI(
-    api_key=os.environ.get("FIREWORKS_API_KEY", "dummy_key"),
-    base_url="https://api.fireworks.ai/inference/v1"
+    api_key=os.environ.get("API_KEY", "dummy_key"),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
-MODEL_NAME = "accounts/fireworks/models/gemma-4-e4b" 
+MODEL_NAME = "gemma-4-26b-a4b-it" 
 
 @app.route('/api/transcribe', methods=['POST'])
 def handle_transcribe():
     """
     Receives an audio file from the frontend and transcribes it using Whisper.
     """
+    print("\n--- PIPELINE STEP 1: STT ---")
     if 'audio' not in request.files:
+        print("❌ [STT ERROR] No audio file provided in request.")
         return jsonify({"success": False, "message": "No audio file provided"}), 400
     
     audio_file = request.files['audio']
@@ -41,6 +47,8 @@ def handle_transcribe():
     
     try:
         # We can use the Groq Whisper API for insanely fast transcription
+        # For this hackathon, we are pointing OpenAI SDK to Groq Whisper if configured,
+        # but the request is to verify STT works robustly.
         with open(temp_path, "rb") as file:
             transcription = client.audio.transcriptions.create(
                 file=file,
@@ -48,8 +56,9 @@ def handle_transcribe():
                 response_format="text"
             )
         text = transcription
+        print(f"✅ [STT SUCCESS] Transcribed: '{text}'")
     except Exception as e:
-        print(f"Transcription error: {e}")
+        print(f"❌ [STT ERROR] Transcription failed: {e}")
         text = "Error during transcription."
         
     return jsonify({"success": True, "text": text})
@@ -57,16 +66,19 @@ def handle_transcribe():
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
     """
-    The core reasoning endpoint. Receives text and history, calls Gemma 4 with tools,
-    and returns the final response.
+    The core reasoning endpoint. Receives text, calls Gemma 4 with tools,
+    and returns the final response. Maintains history in-memory.
     """
+    print("\n--- PIPELINE STEP 3: GEMMA 4 BRAIN ---")
     data = request.json
     user_text = data.get('text', '')
-    history = data.get('history', [])
     user_id = data.get('user_id', 'user')
     emotion_context = data.get('emotion_context', '')
     
-    system_prompt = f"""You are a professional, empathetic AI assistant named NovaVoice.
+    if user_id not in chat_histories:
+        chat_histories[user_id] = []
+        
+    system_prompt = f"""You are a professional, empathetic AI assistant named Tinkr.
 Your core reasoning engine is Gemma 4.
 The user's name/ID is "{user_id}".
 Always check availability first before booking a meeting to prevent double-booking. When booking or checking, format dates strictly to ISO 8601 offset to the user's timezone.
@@ -78,7 +90,7 @@ When the user expresses an emotion, be empathetic and non-judgmental.
 """
     
     messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history)
+    messages.extend(chat_histories[user_id])
     messages.append({"role": "user", "content": user_text})
     
     tools = [
@@ -143,7 +155,7 @@ When the user expresses an emotion, be empathetic and non-judgmental.
         }
     ]
 
-    print("\n💬 [CHAT REQUEST] Prompting Gemma 4...")
+    print(f"💬 [CHAT REQUEST] Prompting {MODEL_NAME} for user '{user_id}'...")
     
     try:
         response = client.chat.completions.create(
@@ -161,19 +173,30 @@ When the user expresses an emotion, be empathetic and non-judgmental.
             
             for tool_call in response_message.tool_calls:
                 function_name = tool_call.function.name
-                function_args = json.loads(tool_call.function.arguments)
-                print(f"🔧 [TOOL CALL] {function_name}({function_args})")
                 
-                function_response = "Tool executed successfully."
-                
-                if function_name == "check_availability":
-                    function_response = str(check_availability(date_iso=function_args.get("date")))
-                elif function_name == "book_meeting":
-                    function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_email")))
-                elif function_name == "search_web":
-                    function_response = str(search_web(query=function_args.get("query")))
-                elif function_name == "add_task":
-                    function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
+                try:
+                    function_args = json.loads(tool_call.function.arguments)
+                    print(f"🔧 [TOOL CALL] {function_name}({function_args})")
+                    
+                    if function_name == "check_availability":
+                        print("--- PIPELINE STEP 4: GOOGLE CALENDAR TOOL ---")
+                        function_response = str(check_availability(date_iso=function_args.get("date")))
+                        print(f"✅ [CALENDAR SUCCESS] {function_response}")
+                    elif function_name == "book_meeting":
+                        print("--- PIPELINE STEP 4: GOOGLE CALENDAR TOOL ---")
+                        function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_email")))
+                        print(f"✅ [CALENDAR SUCCESS] {function_response}")
+                    elif function_name == "search_web":
+                        print("--- PIPELINE STEP 5: WEB SEARCH TOOL ---")
+                        function_response = str(search_web(query=function_args.get("query")))
+                        print(f"✅ [SEARCH SUCCESS] Retrieved {len(function_response)} chars.")
+                    elif function_name == "add_task":
+                        function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
+                    else:
+                        function_response = "Unknown tool."
+                except Exception as ex:
+                    print(f"❌ [TOOL ERROR] Failed to execute {function_name}: {ex}")
+                    function_response = f"Error executing tool: {ex}"
                 
                 messages.append({
                     "tool_call_id": tool_call.id,
@@ -191,11 +214,18 @@ When the user expresses an emotion, be empathetic and non-judgmental.
         else:
             final_text = response_message.content
             
+        print(f"✅ [CHAT SUCCESS] Final response generated.")
+        
+        # Update history
+        chat_histories[user_id].append({"role": "user", "content": user_text})
+        chat_histories[user_id].append({"role": "assistant", "content": final_text})
+        
     except Exception as e:
         print(f"❌ [CHAT ERROR] {e}")
         final_text = "I'm having trouble connecting to my brain right now."
 
     print(f"✅ [CHAT RESPONSE] {final_text}")
+    print("--- PIPELINE STEP 6: TTS --- (Sent to frontend for Web Speech API playback)")
     return jsonify({"success": True, "text": final_text})
 
 
@@ -236,9 +266,15 @@ def handle_execute_sql():
 
 @app.route('/api/analyze_audio', methods=['POST'])
 def handle_analyze_audio():
+    print("\n--- PIPELINE STEP 2: EMOTION TRACKING ---")
     data = request.json
-    result = analyze_audio_biomarkers(base64_audio=data.get('audio_base64'))
-    return jsonify(result)
+    try:
+        result = analyze_audio_biomarkers(base64_audio=data.get('audio_base64'))
+        print(f"✅ [EMOTION SUCCESS] Biomarkers analyzed. Alert: {result.get('alert')}")
+        return jsonify(result)
+    except Exception as e:
+        print(f"❌ [EMOTION ERROR] Failed to analyze audio biomarkers: {e}")
+        return jsonify({"alert": False, "error": str(e)})
 
 @app.route('/api/save_mental_state', methods=['POST'])
 def handle_save_mental_state():
@@ -254,9 +290,16 @@ def handle_save_mental_state():
         "rms_variance": data.get("rms_variance", 0.0),
         "voice_energy_level": data.get("voice_energy_level", "medium"),
         "suggestions": data.get("suggestions", []),
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
-    result = save_mental_state(user_id=user_id, state_data=state_data)
-    return jsonify(result)
+    
+    if user_id not in user_mental_states:
+        user_mental_states[user_id] = []
+    
+    user_mental_states[user_id].insert(0, state_data) # Add to front (newest first)
+    
+    print(f"✅ [IN-MEMORY STATE] Saved mental state for '{user_id}': {state_data['predicted_state']}")
+    return jsonify({"success": True, "message": "Mental state saved successfully."})
 
 @app.route('/api/get_mental_state_history', methods=['POST'])
 def handle_get_mental_state_history():
@@ -266,7 +309,8 @@ def handle_get_mental_state_history():
         return jsonify({"success": False, "history": [], "message": "user_id is required."}), 400
     
     limit = data.get("limit", 10)
-    history = get_mental_state_history(user_id=user_id, limit=limit)
+    history = user_mental_states.get(user_id, [])[:limit]
+    
     return jsonify({"success": True, "history": history})
 
 @app.route('/api/get_mental_state_context', methods=['POST'])
@@ -275,9 +319,32 @@ def handle_get_mental_state_context():
     user_id = data.get('user_id')
     if not user_id:
         return jsonify({"success": False, "context": ""}), 400
-    context = get_mental_state_context(user_id=user_id)
+    
+    history = user_mental_states.get(user_id, [])[:5]
+    
+    if not history:
+        return jsonify({"success": True, "context": "No prior mental state history available for this user."})
+        
+    lines = [f"MENTAL HEALTH CONTEXT for user '{user_id}':"]
+    lines.append(f"Total recent records: {len(history)}")
+    
+    confirmed_states = [h["predicted_state"] for h in history if h.get("user_confirmed")]
+    if confirmed_states:
+        state_counts = {}
+        for s in confirmed_states:
+            state_counts[s] = state_counts.get(s, 0) + 1
+        most_common = max(state_counts, key=state_counts.get)
+        lines.append(f"Most frequent confirmed state: {most_common} ({state_counts[most_common]} times)")
+    
+    latest = history[0]
+    lines.append(f"\nLatest assessment ({latest['timestamp']}):")
+    lines.append(f"  - State: {latest.get('predicted_state', 'unknown')}")
+    lines.append(f"  - Confirmed: {latest.get('user_confirmed', False)}")
+    lines.append(f"  - Voice Energy: {latest.get('voice_energy_level', 'unknown')}")
+    
+    context = "\n".join(lines)
     return jsonify({"success": True, "context": context})
 
 if __name__ == '__main__':
-    print("🚀 NovaVoice API running on http://127.0.0.1:5000")
+    print("🚀 Tinkr API running on http://127.0.0.1:5000")
     app.run(port=5000)

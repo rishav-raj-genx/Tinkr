@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NovaVoice - AI Assistant</title>
-    <meta name="description" content="NovaVoice AI voice assistant with mental state tracking and biomarker analysis">
+    <title>Tinkr - AI Assistant</title>
+    <meta name="description" content="Tinkr voice assistant with mental state tracking and biomarker analysis">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -729,7 +729,7 @@
     <div id="setupModal" class="setup-modal">
         <div class="setup-card">
             <div class="setup-logo">🌌</div>
-            <h2>NovaVoice</h2>
+            <h2>Tinkr</h2>
             <p>AI Voice Assistant with Mental Wellness Tracking</p>
 
             <div class="input-group">
@@ -806,7 +806,6 @@
         let mediaRecorder = null;
         let audioChunks = [];
         let mediaStream = null;
-        let chatHistory = [];
         let currentUserId = '';
         let mentalStateContext = '';
         let pendingBiomarkerData = null; // Stores the latest biomarker result awaiting confirmation
@@ -835,7 +834,7 @@
 
             UI.setupModal.classList.add('hidden');
             updateStatus('Connecting...', 'speaking');
-            addMessage('Initializing connection to NovaVoice backend...', 'system-msg');
+            addMessage('Initializing connection to Tinkr backend...', 'system-msg');
 
             // Fetch mental state context from Firebase before connecting
             try {
@@ -963,7 +962,6 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 text: transData.text,
-                                history: chatHistory,
                                 user_id: currentUserId,
                                 emotion_context: currentEmotionContext
                             })
@@ -973,8 +971,6 @@
                         setSpeakingState(false);
                         if (chatData.success && chatData.text) {
                             addMessage(chatData.text, 'ai-msg');
-                            chatHistory.push({ role: 'user', content: transData.text });
-                            chatHistory.push({ role: 'assistant', content: chatData.text });
                             speakText(chatData.text);
                         }
                         updateStatus('Ready', 'muted');
@@ -1081,22 +1077,7 @@
                         // Show suggestions
                         showSuggestions(pendingBiomarkerData.suggestions);
 
-                        // Inject context update to Gemini so it's aware
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({
-                                clientContent: {
-                                    turns: [{
-                                        role: "user",
-                                        parts: [{
-                                            text: `[SYSTEM: User confirmed they are feeling ${pendingBiomarkerData.predicted_state}. ` +
-                                                `This has been logged. Please offer empathetic, contextual support and ` +
-                                                `suggest: ${pendingBiomarkerData.suggestions.join('; ')}. Be natural and caring.]`
-                                        }]
-                                    }],
-                                    turnComplete: true
-                                }
-                            }));
-                        }
+                        // Handled purely on backend via in-memory state now
                     } else {
                         addMessage('👍 Got it — record saved as unconfirmed.', 'system-msg');
                     }
