@@ -82,9 +82,12 @@ def handle_chat():
     if user_id not in chat_histories:
         chat_histories[user_id] = []
         
+    current_time = datetime.now().astimezone().isoformat()
+        
     system_prompt = f"""You are a professional, empathetic AI assistant named Tinkr.
 Your core reasoning engine is Gemma 4.
 The user's name/ID is "{user_id}".
+The current date and time is: {current_time}.
 Always check availability first before booking a meeting to prevent double-booking. When booking or checking, format dates strictly to ISO 8601 offset to the user's timezone.
 
 WELLNESS ROLE: You track the user's mental wellbeing through voice biomarker analysis.

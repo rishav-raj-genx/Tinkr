@@ -22,9 +22,15 @@ def check_availability(date_iso: str) -> str:
             dt = datetime.datetime.fromisoformat(date_iso.replace('Z', '+00:00'))
         except ValueError:
             # Clean string format fallback if older Python versions struggle with suffix colons or milliseconds
-            clean_str = date_iso.split('.')[0].split('+')[0].split('-')[0]
-            if len(clean_str) > 10:
-                dt = datetime.datetime.strptime(clean_str[:19], "%Y-%m-%dT%H:%M:%S")
+            # Strip timezone offset from the end (e.g. +05:30)
+            clean_str = date_iso.split('+')[0]
+            if 'Z' in clean_str:
+                clean_str = clean_str.replace('Z', '')
+            if '.' in clean_str:
+                clean_str = clean_str.split('.')[0]
+                
+            if 'T' in clean_str:
+                dt = datetime.datetime.strptime(clean_str, "%Y-%m-%dT%H:%M:%S")
             else:
                 dt = datetime.datetime.strptime(clean_str[:10], "%Y-%m-%d")
         
@@ -65,8 +71,12 @@ def book_meeting(date_time_iso: str, name: str = "User") -> str:
         try:
             start_time = datetime.datetime.fromisoformat(date_time_iso.replace('Z', '+00:00'))
         except ValueError:
-            clean_str = date_time_iso.split('.')[0].split('+')[0].split('-')[0]
-            start_time = datetime.datetime.strptime(clean_str[:19], "%Y-%m-%dT%H:%M:%S")
+            clean_str = date_time_iso.split('+')[0]
+            if 'Z' in clean_str:
+                clean_str = clean_str.replace('Z', '')
+            if '.' in clean_str:
+                clean_str = clean_str.split('.')[0]
+            start_time = datetime.datetime.strptime(clean_str, "%Y-%m-%dT%H:%M:%S")
             
         end_time = start_time + datetime.timedelta(minutes=30)
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")

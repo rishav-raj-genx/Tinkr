@@ -691,6 +691,7 @@
                     reader.onloadend = async () => {
                         const base64Audio = reader.result.split(',')[1];
                         
+                        let emotionContextText = '';
                         try {
                             const bioRes = await fetch('http://127.0.0.1:5000/api/analyze_audio', {
                                 method: 'POST',
@@ -701,6 +702,7 @@
                             if (bioData.alert) {
                                 pendingBiomarkerData = bioData;
                                 triggerWellnessPrompt(bioData);
+                                emotionContextText = `Voice analysis detected recent ${bioData.predicted_state}.`;
                             }
                         } catch (err) {
                             console.error("Biomarker API Error:", err);
@@ -714,6 +716,7 @@
                             body: JSON.stringify({
                                 text: transData.text,
                                 user_id: currentUserId,
+                                emotion_context: emotionContextText
                             })
                         });
                         const chatData = await chatRes.json();
