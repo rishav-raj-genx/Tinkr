@@ -1,0 +1,19 @@
+# Ignore environment variables and security credentials
+.env
+token.json
+company_data.db
+
+# Ignore Python cache and virtual environment
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Ignore step-by-step educational CLI scripts (optional standalone scripts)
+step1_connect.py
+step2_voice.py
+step3_transcription.py
+step4_booking_tool.py
+step5_e2e.py
+response.wav
+serviceAccountKey.json

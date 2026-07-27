@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovaVoice - AI Assistant</title>
+    <meta name="description" content="NovaVoice AI voice assistant with mental state tracking and biomarker analysis">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0e1a;
+            --bg-secondary: #0f172a;
+            --surface: #1e293b;
+            --surface-elevated: #253349;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.3);
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --purple: #8b5cf6;
+            --border: #334155;
+            --border-subtle: #1e293b;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Setup Modal ── */
+        .setup-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 14, 26, 0.97);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+        }
+
+        .setup-modal.hidden {
+            display: none;
+        }
+
+        .setup-card {
+            background: linear-gradient(145deg, var(--surface), var(--bg-secondary));
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 3rem 2.5rem;
+            width: 420px;
+            max-width: 90vw;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 80px var(--accent-glow);
+            text-align: center;
+        }
+
+        .setup-logo {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .setup-card h2 {
+            margin: 0 0 0.25rem 0;
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-main), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .setup-card p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin: 0 0 2rem 0;
+        }
+
+        .input-group {
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 0.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .api-input {
+            padding: 0.875rem 1rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-color);
+            color: var(--text-main);
+            width: 100%;
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            outline: none;
+        }
+
+        .api-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .api-input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .btn-start {
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--accent), #2563eb);
+            color: white;
+            border: none;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 0.5rem;
+            transition: transform 0.2s, box-shadow 0.3s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--accent-glow);
+        }
+
+        .btn-start:active {
+            transform: translateY(0);
+        }
+
+        /* ── Status Badge ── */
+        .status-badge {
+            position: absolute;
+            top: 2rem;
+            background: var(--surface);
+            padding: 0.5rem 1.25rem;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .dot.live {
+            background: var(--success);
+            box-shadow: 0 0 10px var(--success);
+            animation: pulse-dot 2s infinite;
+        }
+
+        .dot.speaking {
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ── Orb & Call Button ── */
+        .orb-container {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        .call-button {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(145deg, var(--surface), var(--surface-elevated));
+            color: var(--text-main);
+            font-size: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+            transition: background 0.3s, transform 0.15s;
+        }
+
+        .call-button:hover {
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.6), 0 0 20px var(--accent-glow);
+        }
+
+        .call-button.active {
+            background: linear-gradient(145deg, var(--danger), #dc2626);
+            color: white;
+            transform: scale(var(--mic-scale, 1));
+            box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+        }
+
+        .ring {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(var(--ai-scale, 1));
+            transition: transform 0.05s ease-out, opacity 0.1s;
+        }
+
+        .speaking-mode .ring {
+            opacity: 0.8;
+        }
+
+        /* ── Toolbar ── */
+        .toolbar {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .toolbar-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .toolbar-btn:hover {
+            background: var(--surface-elevated);
+            color: var(--text-main);
+            border-color: var(--accent);
+        }
+
+        .toolbar-btn.active {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* ── Transcript ── */
+        .transcript-container {
+            width: 90%;
+            max-width: 550px;
+            height: 340px;
+            background: var(--surface);
+            border-radius: 20px;
+            padding: 1.25rem;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .transcript-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .transcript-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .transcript-container::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .message {
+            font-size: 0.92rem;
+            line-height: 1.6;
+            padding: 0.75rem 1rem;
+            border-radius: 14px;
+            max-width: 85%;
+            width: fit-content;
+            word-wrap: break-word;
+            animation: msg-in 0.25s ease-out;
+        }
+
+        @keyframes msg-in {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-msg {
+            background: linear-gradient(135deg, #334155, #3b4a63);
+            align-self: flex-end;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai-msg {
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+            align-self: flex-start;
+            color: #93bbfc;
+            border-bottom-left-radius: 4px;
+        }
+
+        .system-msg {
+            align-self: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        .tool-card {
+            align-self: center;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px dashed rgba(16, 185, 129, 0.3);
+            color: #34d399;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            width: 90%;
+            box-sizing: border-box;
+            white-space: pre-wrap;
+        }
+
+        /* ── Mental State Confirmation Card ── */
+        .mental-state-card {
+            align-self: center;
+            background: linear-gradient(145deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.08));
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 16px;
+            padding: 1.25rem;
+            width: 92%;
+            box-sizing: border-box;
+            animation: card-pulse 0.5s ease-out;
+        }
+
+        @keyframes card-pulse {
+            0% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .mental-state-card .state-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .mental-state-card .state-icon {
+            font-size: 1.5rem;
+        }
+
+        .mental-state-card .state-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--purple);
+        }
+
+        .mental-state-card .state-detail {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            line-height: 1.5;
+        }
+
+        .mental-state-card .state-metrics {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .metric-chip {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .mental-state-card .state-actions {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .state-btn {
+            flex: 1;
+            padding: 0.6rem 1rem;
+            border-radius: 10px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .state-btn.confirm {
+            background: linear-gradient(135deg, var(--success), #059669);
+            color: white;
+        }
+
+        .state-btn.confirm:hover {
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .state-btn.reject {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .state-btn.reject:hover {
+            background: rgba(239, 68, 68, 0.25);
+        }
+
+        .state-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* ── Dashboard / History Panel ── */
+        .dashboard {
+            position: fixed;
+            right: -440px;
+            top: 0;
+            bottom: 0;
+            width: 400px;
+            background: rgba(15, 23, 42, 0.97);
+            backdrop-filter: blur(20px);
+            border-left: 1px solid var(--border);
+            padding: 1.5rem;
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+            z-index: 50;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dashboard.open {
+            right: 0;
+        }
+
+        .dashboard::-webkit-scrollbar {
+            width: 5px;
+        }
+        .dashboard::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .dashboard-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.25rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dashboard h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--purple), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .close-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .close-btn:hover {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .history-empty {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        .history-empty .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* History Entry */
+        .history-entry {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            transition: border-color 0.2s;
+        }
+
+        .history-entry:hover {
+            border-color: var(--purple);
+        }
+
+        .history-entry-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .history-state-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.25rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .history-state-badge.stressed {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+        }
+        .history-state-badge.anxious {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+        }
+        .history-state-badge.fatigued {
+            background: rgba(139, 92, 246, 0.15);
+            color: #a78bfa;
+        }
+        .history-state-badge.calm {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+        .history-state-badge.unknown {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-muted);
+        }
+
+        .history-timestamp {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .history-confirmed {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .history-confirmed .check {
+            color: var(--success);
+        }
+        .history-confirmed .cross {
+            color: var(--danger);
+        }
+
+        .history-metrics {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.5rem;
+        }
+
+        .history-suggestions {
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .history-suggestions-title {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.35rem;
+        }
+
+        .history-suggestion-item {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            padding: 0.2rem 0;
+            padding-left: 0.75rem;
+            position: relative;
+        }
+
+        .history-suggestion-item::before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: var(--accent);
+            font-size: 0.7rem;
+        }
+
+        /* Chart section in dashboard */
+        .chart-section {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .chart-section h4 {
+            margin: 0 0 0.75rem 0;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* ── Suggestion Toast ── */
+        .suggestion-toast {
+            align-self: center;
+            background: linear-gradient(145deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.05));
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 1rem;
+            width: 92%;
+            box-sizing: border-box;
+        }
+
+        .suggestion-toast .toast-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--success);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .suggestion-toast .toast-item {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            padding: 0.25rem 0 0.25rem 1rem;
+            position: relative;
+            line-height: 1.5;
+        }
+
+        .suggestion-toast .toast-item::before {
+            content: "✦";
+            position: absolute;
+            left: 0;
+            color: var(--success);
+            font-size: 0.65rem;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 600px) {
+            .setup-card { padding: 2rem 1.5rem; width: 95vw; }
+            .dashboard { width: 100%; right: -100%; }
+            .dashboard.open { right: 0; }
+            .transcript-container { height: 280px; }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+    <!-- ── Setup Modal ── -->
+    <div id="setupModal" class="setup-modal">
+        <div class="setup-card">
+            <div class="setup-logo">🌌</div>
+            <h2>NovaVoice</h2>
+            <p>AI Voice Assistant with Mental Wellness Tracking</p>
+
+            <div class="input-group">
+                <label>Your Name / ID</label>
+                <input type="text" id="userId" class="api-input" placeholder="e.g. john_doe or your email">
+            </div>
+
+            <div class="input-group">
+                <label>Gemini API Key</label>
+                <input type="password" id="apiKey" class="api-input" placeholder="AIza...">
+            </div>
+
+            <button id="startSessionBtn" class="btn-start">Connect to Agent</button>
+        </div>
+    </div>
+
+    <!-- ── History Dashboard ── -->
+    <div class="dashboard" id="dashboard">
+        <div class="dashboard-header">
+            <h3>🧠 Mental State History</h3>
+            <button class="close-btn" id="closeDashboard">✕</button>
+        </div>
+        <div id="historyContent">
+            <div class="history-empty">
+                <div class="empty-icon">📊</div>
+                <p>No mental state records yet.<br>Start a call to begin tracking.</p>
+            </div>
+        </div>
+        <div class="chart-section">
+            <h4>📈 Data Visualization</h4>
+            <canvas id="dataChart"></canvas>
+        </div>
+    </div>
+
+    <!-- ── Main UI ── -->
+    <div class="status-badge" id="statusBadge">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText">Disconnected</span>
+    </div>
+
+    <div class="orb-container" id="orbContainer">
+        <div class="ring"></div>
+        <button class="call-button" id="callBtn"><span class="material-icons" style="font-size: inherit;">call</span></button>
+    </div>
+
+    <div class="toolbar">
+        <button class="toolbar-btn" id="historyBtn">📋 History</button>
+    </div>
+
+    <div class="transcript-container" id="transcript">
+        <div class="message system-msg">Waiting to connect...</div>
+    </div>
+
+    <script>
+        // ── DOM References ──
+        const UI = {
+            setupModal: document.getElementById('setupModal'),
+            startBtn: document.getElementById('startSessionBtn'),
+            apiKeyInput: document.getElementById('apiKey'),
+            userIdInput: document.getElementById('userId'),
+            callBtn: document.getElementById('callBtn'),
+            statusText: document.getElementById('statusText'),
+            statusDot: document.getElementById('statusDot'),
+            transcript: document.getElementById('transcript'),
+            orbContainer: document.getElementById('orbContainer'),
+            dashboard: document.getElementById('dashboard'),
+            historyBtn: document.getElementById('historyBtn'),
+            closeDashboard: document.getElementById('closeDashboard'),
+            historyContent: document.getElementById('historyContent'),
+        };
+
+        // ── State ──
+        let isCallActive = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let mediaStream = null;
+        let chatHistory = [];
+        let currentUserId = '';
+        let mentalStateContext = '';
+        let pendingBiomarkerData = null; // Stores the latest biomarker result awaiting confirmation
+        let micAnalyser = null;
+        let visualizerId = null;
+
+        // ── Dashboard Controls ──
+        UI.historyBtn.addEventListener('click', () => {
+            const isOpen = UI.dashboard.classList.toggle('open');
+            UI.historyBtn.classList.toggle('active', isOpen);
+            if (isOpen && currentUserId) {
+                loadHistory();
+            }
+        });
+
+        UI.closeDashboard.addEventListener('click', () => {
+            UI.dashboard.classList.remove('open');
+            UI.historyBtn.classList.remove('active');
+        });
+
+        // ── Session Start ──
+        UI.startBtn.addEventListener('click', async () => {
+            currentUserId = UI.userIdInput.value.trim();
+
+            if (!currentUserId) return alert("Please enter your name or ID.");
+
+            UI.setupModal.classList.add('hidden');
+            updateStatus('Connecting...', 'speaking');
+            addMessage('Initializing connection to NovaVoice backend...', 'system-msg');
+
+            // Fetch mental state context from Firebase before connecting
+            try {
+                const ctxRes = await fetch('http://127.0.0.1:5000/api/get_mental_state_context', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: currentUserId })
+                });
+                const ctxData = await ctxRes.json();
+                if (ctxData.success && ctxData.context) {
+                    mentalStateContext = ctxData.context;
+                    console.log("🧠 Loaded mental state context:", mentalStateContext);
+                }
+            } catch (err) {
+                console.warn("Could not load mental state context:", err);
+                mentalStateContext = '';
+            }
+
+            updateStatus('Ready', 'muted');
+            addMessage(`Welcome back, ${currentUserId}! Tap the mic to record a message.`, 'system-msg');
+        });
+
+        // ── Call Button (Tap to Toggle Recording) ──
+        UI.callBtn.addEventListener('click', async () => {
+            isCallActive = !isCallActive;
+
+            if (isCallActive) {
+                UI.callBtn.classList.add('active');
+                UI.callBtn.innerHTML = '<span class="material-icons" style="font-size: inherit;">mic</span>';
+                updateStatus('Recording...', 'live');
+
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    micAnalyser = audioContext.createAnalyser();
+                    micAnalyser.fftSize = 256;
+                    const source = audioContext.createMediaStreamSource(mediaStream);
+                    source.connect(micAnalyser);
+                    startVisualizer();
+
+                    mediaRecorder = new MediaRecorder(mediaStream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) {
+                            audioChunks.push(e.data);
+                        }
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        await processAudio(audioBlob);
+                    };
+
+                    mediaRecorder.start();
+
+                } catch (err) {
+                    console.error("Mic Error:", err);
+                    isCallActive = false;
+                    resetCallBtnUI();
+                }
+            } else {
+                resetCallBtnUI();
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    mediaRecorder.stop();
+                    updateStatus('Processing...', 'speaking');
+                }
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(t => t.stop());
+                }
+            }
+        });
+
+        function resetCallBtnUI() {
+            UI.callBtn.classList.remove('active');
+            UI.callBtn.innerHTML = '<span class="material-icons" style="font-size: inherit;">call</span>';
+            UI.orbContainer.classList.remove('speaking-mode');
+            if (visualizerId) cancelAnimationFrame(visualizerId);
+            UI.callBtn.style.setProperty('--mic-scale', '1');
+            UI.orbContainer.style.setProperty('--ai-scale', '1');
+        }
+
+        async function processAudio(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+            
+            try {
+                addMessage("...", "user-msg"); // placeholder
+                const transRes = await fetch('http://127.0.0.1:5000/api/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                const transData = await transRes.json();
+                
+                if (transData.success && transData.text) {
+                    const msgs = document.querySelectorAll('.user-msg');
+                    if (msgs.length > 0) msgs[msgs.length - 1].innerText = transData.text;
+                    
+                    const reader = new FileReader();
+                    reader.readAsDataURL(audioBlob);
+                    reader.onloadend = async () => {
+                        const base64Audio = reader.result.split(',')[1];
+                        let currentEmotionContext = mentalStateContext;
+                        
+                        try {
+                            const bioRes = await fetch('http://127.0.0.1:5000/api/analyze_audio', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ audio_base64: base64Audio })
+                            });
+                            const bioData = await bioRes.json();
+                            if (bioData.alert) {
+                                pendingBiomarkerData = bioData;
+                                showMentalStateConfirmation(bioData);
+                                currentEmotionContext += `\n[SYSTEM: Voice analysis detected recent ${bioData.predicted_state}.]`;
+                            }
+                        } catch (err) {
+                            console.error("Biomarker API Error:", err);
+                        }
+                        
+                        setSpeakingState(true);
+                        const chatRes = await fetch('http://127.0.0.1:5000/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                text: transData.text,
+                                history: chatHistory,
+                                user_id: currentUserId,
+                                emotion_context: currentEmotionContext
+                            })
+                        });
+                        const chatData = await chatRes.json();
+                        
+                        setSpeakingState(false);
+                        if (chatData.success && chatData.text) {
+                            addMessage(chatData.text, 'ai-msg');
+                            chatHistory.push({ role: 'user', content: transData.text });
+                            chatHistory.push({ role: 'assistant', content: chatData.text });
+                            speakText(chatData.text);
+                        }
+                        updateStatus('Ready', 'muted');
+                    };
+                } else {
+                    addMessage("Could not transcribe audio.", "system-msg");
+                    updateStatus('Ready', 'muted');
+                }
+            } catch (err) {
+                console.error("Pipeline Error:", err);
+                addMessage("Error processing audio.", "system-msg");
+                updateStatus('Ready', 'muted');
+            }
+        }
+        
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                const voices = window.speechSynthesis.getVoices();
+                const goodVoice = voices.find(v => v.name.includes("Google") || v.name.includes("Samantha") || v.name.includes("Siri"));
+                if (goodVoice) utterance.voice = goodVoice;
+                
+                utterance.rate = 1.1; 
+                
+                utterance.onstart = () => {
+                    UI.orbContainer.classList.add('speaking-mode');
+                };
+                utterance.onend = () => {
+                    UI.orbContainer.classList.remove('speaking-mode');
+                };
+                
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // ── Mental State Confirmation Card ──
+        function showMentalStateConfirmation(bioData) {
+            const stateIcons = {
+                stressed: '😰', anxious: '😟', fatigued: '😴', calm: '😌', unknown: '❓'
+            };
+
+            const card = document.createElement('div');
+            card.className = 'mental-state-card';
+            card.innerHTML = `
+                <div class="state-header">
+                    <span class="state-icon">${stateIcons[bioData.predicted_state] || '🧠'}</span>
+                    <span class="state-title">Mental State Detected: ${bioData.predicted_state.charAt(0).toUpperCase() + bioData.predicted_state.slice(1)}</span>
+                </div>
+                <div class="state-detail">
+                    Voice analysis suggests you may be feeling <strong>${bioData.predicted_state}</strong>.
+                    Energy level: <strong>${bioData.voice_energy_level}</strong>.
+                </div>
+                <div class="state-metrics">
+                    <span class="metric-chip">ZCR: ${bioData.mean_zcr?.toFixed(4) || '—'}</span>
+                    <span class="metric-chip">RMS Var: ${bioData.rms_variance?.toFixed(6) || '—'}</span>
+                    <span class="metric-chip">Energy: ${bioData.voice_energy_level}</span>
+                </div>
+                <div class="state-actions">
+                    <button class="state-btn confirm" onclick="confirmMentalState(true, this)">✅ Yes, that's right</button>
+                    <button class="state-btn reject" onclick="confirmMentalState(false, this)">❌ No, I'm fine</button>
+                </div>
+            `;
+
+            UI.transcript.appendChild(card);
+            UI.transcript.scrollTop = UI.transcript.scrollHeight;
+            activeBubble = null;
+            activeRole = null;
+        }
+
+        // ── Confirm / Reject Mental State ──
+        async function confirmMentalState(confirmed, btnElement) {
+            // Disable both buttons
+            const card = btnElement.closest('.mental-state-card');
+            const buttons = card.querySelectorAll('.state-btn');
+            buttons.forEach(b => b.disabled = true);
+
+            if (!pendingBiomarkerData || !currentUserId) {
+                addMessage('⚠️ Could not save — missing data.', 'system-msg');
+                return;
+            }
+
+            const payload = {
+                user_id: currentUserId,
+                predicted_state: pendingBiomarkerData.predicted_state,
+                user_confirmed: confirmed,
+                mean_zcr: pendingBiomarkerData.mean_zcr,
+                rms_variance: pendingBiomarkerData.rms_variance,
+                voice_energy_level: pendingBiomarkerData.voice_energy_level,
+                suggestions: pendingBiomarkerData.suggestions || [],
+            };
+
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/save_mental_state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    if (confirmed) {
+                        addMessage(`✅ Mental state "${pendingBiomarkerData.predicted_state}" saved to your profile.`, 'system-msg');
+                        // Show suggestions
+                        showSuggestions(pendingBiomarkerData.suggestions);
+
+                        // Inject context update to Gemini so it's aware
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                clientContent: {
+                                    turns: [{
+                                        role: "user",
+                                        parts: [{
+                                            text: `[SYSTEM: User confirmed they are feeling ${pendingBiomarkerData.predicted_state}. ` +
+                                                `This has been logged. Please offer empathetic, contextual support and ` +
+                                                `suggest: ${pendingBiomarkerData.suggestions.join('; ')}. Be natural and caring.]`
+                                        }]
+                                    }],
+                                    turnComplete: true
+                                }
+                            }));
+                        }
+                    } else {
+                        addMessage('👍 Got it — record saved as unconfirmed.', 'system-msg');
+                    }
+                } else {
+                    addMessage('⚠️ Failed to save: ' + result.message, 'system-msg');
+                }
+            } catch (err) {
+                console.error("Save Error:", err);
+                addMessage('⚠️ Network error saving mental state.', 'system-msg');
+            }
+
+            pendingBiomarkerData = null;
+        }
+
+        // Make confirmMentalState available globally for onclick
+        window.confirmMentalState = confirmMentalState;
+
+        // ── Show Suggestions ──
+        function showSuggestions(suggestions) {
+            if (!suggestions || suggestions.length === 0) return;
+
+            const toast = document.createElement('div');
+            toast.className = 'suggestion-toast';
+            toast.innerHTML = `
+                <div class="toast-title">💡 Wellness Suggestions</div>
+                ${suggestions.map(s => `<div class="toast-item">${s}</div>`).join('')}
+            `;
+            UI.transcript.appendChild(toast);
+            UI.transcript.scrollTop = UI.transcript.scrollHeight;
+            activeBubble = null;
+            activeRole = null;
+        }
+
+        // ── Load History ──
+        async function loadHistory() {
+            if (!currentUserId) return;
+
+            UI.historyContent.innerHTML = '<div class="history-empty"><p>Loading...</p></div>';
+
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/get_mental_state_history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: currentUserId, limit: 15 })
+                });
+                const data = await res.json();
+
+                if (!data.success || !data.history || data.history.length === 0) {
+                    UI.historyContent.innerHTML = `
+                        <div class="history-empty">
+                            <div class="empty-icon">📊</div>
+                            <p>No mental state records yet.<br>Start a call to begin tracking.</p>
+                        </div>`;
+                    return;
+                }
+
+                UI.historyContent.innerHTML = '';
+                for (const entry of data.history) {
+                    const el = createHistoryEntry(entry);
+                    UI.historyContent.appendChild(el);
+                }
+
+            } catch (err) {
+                console.error("History fetch error:", err);
+                UI.historyContent.innerHTML = `
+                    <div class="history-empty">
+                        <div class="empty-icon">⚠️</div>
+                        <p>Could not load history.<br>Make sure the API server is running.</p>
+                    </div>`;
+            }
+        }
+
+        function createHistoryEntry(entry) {
+            const div = document.createElement('div');
+            div.className = 'history-entry';
+
+            const state = entry.predicted_state || 'unknown';
+            const confirmed = entry.user_confirmed;
+            const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Unknown time';
+
+            let suggestionsHtml = '';
+            if (entry.suggestions && entry.suggestions.length > 0) {
+                suggestionsHtml = `
+                    <div class="history-suggestions">
+                        <div class="history-suggestions-title">Suggestions Given</div>
+                        ${entry.suggestions.map(s => `<div class="history-suggestion-item">${s}</div>`).join('')}
+                    </div>`;
+            }
+
+            div.innerHTML = `
+                <div class="history-entry-header">
+                    <span class="history-state-badge ${state}">${state}</span>
+                    <span class="history-timestamp">${ts}</span>
+                </div>
+                <div class="history-confirmed">
+                    ${confirmed
+                        ? '<span class="check">✓</span> User confirmed'
+                        : '<span class="cross">✗</span> Not confirmed'}
+                </div>
+                <div class="history-metrics">
+                    <span class="metric-chip">ZCR: ${entry.mean_zcr?.toFixed(4) || '—'}</span>
+                    <span class="metric-chip">RMS: ${entry.rms_variance?.toFixed(6) || '—'}</span>
+                    <span class="metric-chip">Energy: ${entry.voice_energy_level || '—'}</span>
+                </div>
+                ${suggestionsHtml}
+            `;
+            return div;
+        }
+
+        // ── Visualizer Engine ──
+        function startVisualizer() {
+            const micData = new Uint8Array(micAnalyser.frequencyBinCount);
+            
+
+            function render() {
+                if (!isCallActive) return;
+
+                micAnalyser.getByteFrequencyData(micData);
+                
+
+                const micVol = micData.reduce((a, b) => a + b, 0) / micData.length;
+                const aiVol = 0;
+
+                const micScale = 1 + (micVol / 255) * 0.15;
+                const aiScale = 1 + (aiVol / 255) * 0.8;
+
+                UI.callBtn.style.setProperty('--mic-scale', micScale);
+                UI.orbContainer.style.setProperty('--ai-scale', aiScale);
+
+                visualizerId = requestAnimationFrame(render);
+            }
+            render();
+        }
+
+        // ── UI Helpers ──
+        function updateStatus(text, dotClass) {
+            UI.statusText.innerText = text;
+            UI.statusDot.className = `dot ${dotClass}`;
+        }
+
+        function addToolCard(text) {
+            const card = document.createElement('pre');
+            card.className = 'tool-card';
+            card.innerText = text;
+            UI.transcript.appendChild(card);
+            UI.transcript.scrollTop = UI.transcript.scrollHeight;
+            activeBubble = null;
+            activeRole = null;
+        }
+
+        function setSpeakingState(isSpeaking) {
+            if (isSpeaking) {
+                UI.orbContainer.classList.add('speaking-mode');
+                updateStatus('Agent Speaking...', 'speaking');
+            } else {
+                UI.orbContainer.classList.remove('speaking-mode');
+                if (isCallActive) updateStatus('Listening...', 'live');
+            }
+        }
+
+        function addMessage(text, typeClass, isChunk = false) {
+            if (isChunk) {
+                if (activeBubble && activeRole === typeClass) {
+                    activeBubble.innerText += text;
+                    UI.transcript.scrollTop = UI.transcript.scrollHeight;
+                    return;
+                }
+                activeBubble = document.createElement('div');
+                activeBubble.className = `message ${typeClass}`;
+                activeBubble.innerText = text;
+                UI.transcript.appendChild(activeBubble);
+                activeRole = typeClass;
+            } else {
+                const msg = document.createElement('div');
+                msg.className = `message ${typeClass}`;
+                msg.innerText = text;
+                UI.transcript.appendChild(msg);
+                activeBubble = null;
+                activeRole = null;
+            }
+            UI.transcript.scrollTop = UI.transcript.scrollHeight;
+        }
+
+        // ── Chart Rendering ──
+        let chartInstance = null;
+        function renderChart(dataArr) {
+            const keys = Object.keys(dataArr[0]);
+            let labelKey = keys.find(k => typeof dataArr[0][k] === 'string') || keys[0];
+            let dataKey = keys.find(k => typeof dataArr[0][k] === 'number') || keys[1];
+
+            if (!dataKey) return;
+
+            UI.dashboard.classList.add('open');
+            UI.historyBtn.classList.add('active');
+
+            const ctx = document.getElementById('dataChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dataArr.map(row => row[labelKey]),
+                    datasets: [{
+                        label: dataKey.toUpperCase(),
+                        data: dataArr.map(row => row[dataKey]),
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.5)' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.3)' } }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#f8fafc', font: { family: 'Inter' } } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
