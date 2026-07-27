@@ -581,7 +581,17 @@
 
         // ── State ──
         let isCallActive = false;
-        let mediaRecorder = null;
+        let visualizerId = null;
+        let ttsQueue = [];
+        let isPlayingTts = false;
+        
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+        }
         let audioChunks = [];
         let mediaStream = null;
         let currentUserId = '';
@@ -628,20 +638,38 @@
                     const source = audioContext.createMediaStreamSource(mediaStream);
                     source.connect(micAnalyser);
                     startVisualizer();
-
-                    mediaRecorder = new MediaRecorder(mediaStream);
-                    audioChunks = [];
-
-                    mediaRecorder.ondataavailable = e => {
-                        if (e.data.size > 0) audioChunks.push(e.data);
-                    };
-
-                    mediaRecorder.onstop = async () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        await processAudio(audioBlob);
-                    };
-
-                    mediaRecorder.start();
+                    
+                    if (recognition) {
+                        recognition.onresult = (event) => {
+                            const transcript = event.results[0][0].transcript;
+                            isCallActive = false;
+                            resetCallBtnUI();
+                            if (mediaStream) {
+                                mediaStream.getTracks().forEach(t => t.stop());
+                            }
+                            processText(transcript);
+                        };
+                        recognition.onerror = (event) => {
+                            console.error("Speech Recognition Error:", event.error);
+                            isCallActive = false;
+                            resetCallBtnUI();
+                            setStreamText("Microphone access denied or error.", "system-text");
+                        };
+                        recognition.onend = () => {
+                            if (isCallActive) {
+                                isCallActive = false;
+                                resetCallBtnUI();
+                                if (mediaStream) {
+                                    mediaStream.getTracks().forEach(t => t.stop());
+                                }
+                            }
+                        };
+                        recognition.start();
+                    } else {
+                        alert("Speech recognition is not supported in this browser.");
+                        isCallActive = false;
+                        resetCallBtnUI();
+                    }
 
                 } catch (err) {
                     console.error("Mic Error:", err);
@@ -651,10 +679,10 @@
                 }
             } else {
                 resetCallBtnUI();
-                if (mediaRecorder && mediaRecorder.state !== "inactive") {
-                    mediaRecorder.stop();
-                    updateStatus('Processing...');
+                if (recognition) {
+                    recognition.stop();
                 }
+                updateStatus('Processing...');
                 if (mediaStream) {
                     mediaStream.getTracks().forEach(t => t.stop());
                 }
@@ -670,68 +698,98 @@
             UI.orbContainer.style.setProperty('--ai-scale', '0.5');
         }
 
-        async function processAudio(audioBlob) {
-            const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.webm');
+        async function processText(text) {
+            setStreamText(`"${text}"`, "user-text");
+            setSpeakingState(true);
+            updateStatus('Thinking...');
             
             try {
-                // 1. STT Pipeline
-                const transRes = await fetch('http://127.0.0.1:5000/api/transcribe', {
+                const chatRes = await fetch('http://127.0.0.1:5000/api/chat_stream', {
                     method: 'POST',
-                    body: formData
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: text,
+                        user_id: currentUserId,
+                        emotion_context: '' // Deprecated for ultra-low latency
+                    })
                 });
-                const transData = await transRes.json();
                 
-                if (transData.success && transData.text) {
-                    setStreamText(`"${transData.text}"`, "user-text");
+                const reader = chatRes.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let sentenceBuffer = "";
+                let fullResponse = "";
+                
+                setStreamText("", "ai-text");
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
                     
-                    // 2. Emotion Tracking
-                    const reader = new FileReader();
-                    reader.readAsDataURL(audioBlob);
-                    reader.onloadend = async () => {
-                        const base64Audio = reader.result.split(',')[1];
-                        
-                        let emotionContextText = '';
-                        try {
-                            const bioRes = await fetch('http://127.0.0.1:5000/api/analyze_audio', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ audio_base64: base64Audio })
-                            });
-                            const bioData = await bioRes.json();
-                            if (bioData.alert) {
-                                pendingBiomarkerData = bioData;
-                                triggerWellnessPrompt(bioData);
-                                emotionContextText = `Voice analysis detected recent ${bioData.predicted_state}.`;
+                    const chunkStr = decoder.decode(value, {stream: true});
+                    const lines = chunkStr.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.replace('data: ', '').trim();
+                            if (dataStr) {
+                                try {
+                                    const dataObj = JSON.parse(dataStr);
+                                    if (dataObj.text) {
+                                        sentenceBuffer += dataObj.text;
+                                        fullResponse += dataObj.text;
+                                        
+                                        // Update UI incrementally
+                                        setStreamText(fullResponse, "ai-text");
+                                        
+                                        // Check for sentence boundary for TTS chunking
+                                        if (/[.!?]\\s*$/.test(sentenceBuffer)) {
+                                            queueTTS(sentenceBuffer.trim());
+                                            sentenceBuffer = "";
+                                        }
+                                    } else if (dataObj.error) {
+                                        setStreamText("Error: " + dataObj.error, "system-text");
+                                    }
+                                } catch(e) {
+                                    console.error("JSON parse error on stream:", e, line);
+                                }
                             }
-                        } catch (err) {
-                            console.error("Biomarker API Error:", err);
                         }
-                        
-                        // 3. Gemma 4 Brain
-                        setSpeakingState(true);
-                        const chatRes = await fetch('http://127.0.0.1:5000/api/chat', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                text: transData.text,
-                                user_id: currentUserId,
-                                emotion_context: emotionContextText
-                            })
-                        });
-                        const chatData = await chatRes.json();
-                        
-                        setSpeakingState(false);
-                        if (chatData.success && chatData.text) {
-                            setStreamText(chatData.text, "ai-text");
-                            speakText(chatData.text);
-                        }
-                        updateStatus('Ready');
-                    };
-                } else {
-                    setStreamText("Could not transcribe audio.", "system-text");
-                    updateStatus('Ready');
+                    }
                 }
+                
+                // Flush remaining buffer
+                if (sentenceBuffer.trim()) {
+                    queueTTS(sentenceBuffer.trim());
+                }
+                
+                updateStatus('Ready');
+                setSpeakingState(false);
+                
+            } catch (err) {
+                console.error("Pipeline Error:", err);
+                setStreamText("Network error during processing.", "system-text");
+                updateStatus('Ready');
+                setSpeakingState(false);
+            }
+        }
+        
+        // ── TTS Queue System ──
+        function queueTTS(text) {
+            ttsQueue.push(text);
+            processTtsQueue();
+        }
+        
+        function processTtsQueue() {
+            if (isPlayingTts || ttsQueue.length === 0) return;
+            isPlayingTts = true;
+            const text = ttsQueue.shift();
+            speakText(text, () => {
+                isPlayingTts = false;
+                processTtsQueue();
+            });
+        }
+        
+        function speakText(text, onEndCallback) {
             } catch (err) {
                 console.error("Pipeline Error:", err);
                 setStreamText("Network error during processing.", "system-text");
@@ -754,12 +812,20 @@
                     startAiVisualizer();
                 };
                 utterance.onend = () => {
-                    UI.orbContainer.classList.remove('speaking-mode');
-                    UI.orbContainer.style.setProperty('--ai-scale', '0.5');
-                    if(visualizerId) cancelAnimationFrame(visualizerId);
+                    if (ttsQueue.length === 0) {
+                        UI.orbContainer.classList.remove('speaking-mode');
+                        UI.orbContainer.style.setProperty('--ai-scale', '0.5');
+                        if(visualizerId) cancelAnimationFrame(visualizerId);
+                    }
+                    if (onEndCallback) onEndCallback();
+                };
+                utterance.onerror = () => {
+                    if (onEndCallback) onEndCallback();
                 };
                 
                 window.speechSynthesis.speak(utterance);
+            } else {
+                if (onEndCallback) onEndCallback();
             }
         }
 

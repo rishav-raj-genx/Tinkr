@@ -100,67 +100,216 @@ When the user expresses an emotion, be empathetic and non-judgmental.
     messages.extend(chat_histories[user_id])
     messages.append({"role": "user", "content": user_text})
     
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "check_availability",
-                "description": "Checks the user's calendar for busy slots on a given day.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "date": {"type": "string", "description": "ISO 8601 date to check (e.g., 2026-05-26T00:00:00+05:30)"}
-                    },
-                    "required": ["date"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "book_meeting",
-                "description": "Schedules a meeting on the calendar.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "description": "Meeting title"},
-                        "date_time": {"type": "string", "description": "ISO 8601 date and time (e.g., 2026-05-26T09:00:00+05:30)"},
-                        "guest_email": {"type": "string", "description": "Guest email address"}
-                    },
-                    "required": ["title", "date_time", "guest_email"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "search_web",
-                "description": "Searches the web for current news, weather, or information.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "The search query"}
-                    },
-                    "required": ["query"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "add_task",
-                "description": "Adds a new task to the user's to-do list.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "description": "Task title"},
-                        "notes": {"type": "string", "description": "Optional notes for the task"}
-                    },
-                    "required": ["title"]
-                }
+# Global tools definition
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "check_availability",
+            "description": "Checks the user's calendar for busy slots on a given day.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "ISO 8601 date to check (e.g., 2026-05-26T00:00:00+05:30)"}
+                },
+                "required": ["date"]
             }
         }
-    ]
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "book_meeting",
+            "description": "Schedules a meeting on the calendar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Meeting title"},
+                    "date_time": {"type": "string", "description": "ISO 8601 date and time (e.g., 2026-05-26T09:00:00+05:30)"},
+                    "guest_name": {"type": "string", "description": "Name or identifier of the guest"}
+                },
+                "required": ["title", "date_time", "guest_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Searches the web for current news, weather, or information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_task",
+            "description": "Adds a new task to the user's to-do list.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Task title"},
+                    "notes": {"type": "string", "description": "Optional notes for the task"}
+                },
+                "required": ["title"]
+            }
+        }
+    }
+]
+
+from flask import Response, stream_with_context
+
+@app.route('/api/chat_stream', methods=['POST'])
+def handle_chat_stream():
+    """
+    Ultra-low latency SSE streaming endpoint with intent-based tool bypass.
+    """
+    data = request.json
+    user_text = data.get('text', '')
+    user_id = data.get('user_id', 'user')
+    emotion_context = data.get('emotion_context', '')
+    
+    if user_id not in chat_histories:
+        chat_histories[user_id] = []
+        
+    current_time = datetime.now().astimezone().isoformat()
+    system_prompt = f"""You are Tinkr, a fast, empathetic voice assistant. Keep all spoken responses extremely concise, conversational, and under 2 sentences unless detailed information is requested.
+Your core reasoning engine is Gemma 4.
+The user's name/ID is "{user_id}".
+The current date and time is: {current_time}.
+Always check availability first before booking a meeting to prevent double-booking. When booking or checking, format dates strictly to ISO 8601 offset to the user's timezone.
+
+WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an emotion, be empathetic and non-judgmental.
+
+{emotion_context}"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(chat_histories[user_id])
+    messages.append({"role": "user", "content": user_text})
+    
+    # Intent-Based Tool Bypass
+    text_lower = user_text.lower()
+    trigger_words = ["calendar", "schedule", "book", "news", "search", "weather", "task", "todo", "meeting"]
+    needs_tools = any(word in text_lower for word in trigger_words)
+    
+    active_tools = tools if needs_tools else None
+    
+    def generate():
+        try:
+            if active_tools:
+                # Need to handle tools synchronously first because tools block streaming
+                response = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    tools=active_tools,
+                    tool_choice="auto"
+                )
+                response_message = response.choices[0].message
+                if response_message.tool_calls:
+                    messages.append(response_message)
+                    for tool_call in response_message.tool_calls:
+                        function_name = tool_call.function.name
+                        try:
+                            function_args = json.loads(tool_call.function.arguments)
+                            if function_name == "check_availability":
+                                function_response = str(check_availability(date_iso=function_args.get("date")))
+                            elif function_name == "book_meeting":
+                                function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_name", "Guest")))
+                            elif function_name == "search_web":
+                                function_response = str(search_web(query=function_args.get("query")))
+                            elif function_name == "add_task":
+                                function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
+                            else:
+                                function_response = "Unknown tool."
+                        except Exception as ex:
+                            function_response = f"Error executing tool: {ex}"
+                        
+                        messages.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": function_name,
+                            "content": function_response,
+                        })
+            
+            # Now stream the final response (or the only response if no tools used)
+            stream_response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                stream=True
+            )
+            
+            full_text = ""
+            in_thought = False
+            thought_buffer = ""
+            for chunk in stream_response:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        # Advanced thought tag stripping logic for stream
+                        thought_buffer += delta
+                        
+                        while thought_buffer:
+                            if in_thought:
+                                end_thought = thought_buffer.find("</thought>")
+                                end_think = thought_buffer.find("</think>")
+                                end_idx = max(end_thought, end_think)
+                                if end_idx != -1:
+                                    # Found the end tag
+                                    in_thought = False
+                                    tag_len = 10 if end_thought != -1 else 8
+                                    thought_buffer = thought_buffer[end_idx + tag_len:]
+                                else:
+                                    # Still in thought, consume buffer completely
+                                    thought_buffer = ""
+                            else:
+                                start_thought = thought_buffer.find("<thought>")
+                                start_think = thought_buffer.find("<think>")
+                                
+                                start_idx = -1
+                                if start_thought != -1 and start_think != -1:
+                                    start_idx = min(start_thought, start_think)
+                                elif start_thought != -1:
+                                    start_idx = start_thought
+                                elif start_think != -1:
+                                    start_idx = start_think
+                                    
+                                if start_idx != -1:
+                                    # Found start tag
+                                    safe_text = thought_buffer[:start_idx]
+                                    if safe_text:
+                                        full_text += safe_text
+                                        yield f"data: {json.dumps({'text': safe_text})}\\n\\n"
+                                    thought_buffer = thought_buffer[start_idx:]
+                                    in_thought = True
+                                else:
+                                    # No start tag. If buffer has '<', wait. Else yield.
+                                    if '<' in thought_buffer:
+                                        break # Wait for more chunks to resolve potential tag
+                                    else:
+                                        full_text += thought_buffer
+                                        yield f"data: {json.dumps({'text': thought_buffer})}\\n\\n"
+                                        thought_buffer = ""
+                                        
+            if thought_buffer and not in_thought and '<' not in thought_buffer:
+                full_text += thought_buffer
+                yield f"data: {json.dumps({'text': thought_buffer})}\\n\\n"
+                
+            chat_histories[user_id].append({"role": "user", "content": user_text})
+            chat_histories[user_id].append({"role": "assistant", "content": full_text.strip()})
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f" [CHAT STREAM ERROR] {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\\n\\n"
+            
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
     print(f" [CHAT REQUEST] Prompting {MODEL_NAME} for user '{user_id}'...")
     
