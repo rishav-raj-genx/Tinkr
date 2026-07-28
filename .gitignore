@@ -1,19 +1,68 @@
-# Ignore environment variables and security credentials
+# Environment and secrets
 .env
 token.json
-company_data.db
+*.key
+serviceAccountKey.json
 
-# Ignore Python cache and virtual environment
+# Python cache and artifacts
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
 venv/
 .venv/
+env/
+.env/
 
-# Ignore step-by-step educational CLI scripts (optional standalone scripts)
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+
+# Linting and type checking
+.mypy_cache/
+.ruff_cache/
+
+# Database files
+company_data.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Step-by-step educational CLI scripts
 step1_connect.py
 step2_voice.py
 step3_transcription.py
 step4_booking_tool.py
 step5_e2e.py
+
+# Audio artifacts
 response.wav
-serviceAccountKey.json
+*.wav
+*.mp3
+*.webm
+/tmp/temp_audio.webm
+
+# Temporary files
+temp.js
+tmp/
