@@ -138,7 +138,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "search_web",
-            "description": "Searches the web for information.",
+            "description": "Searches the web for general information. DO NOT use this for weather or news.",
             "parameters": {
                 "type": "object",
                 "properties": {
