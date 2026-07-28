@@ -1,6 +1,6 @@
 # Tinkr
 
-A real-time, bidirectional voice AI assistant powered by Google's Gemini Live API. Tinkr captures microphone audio directly in the browser, streams it over a WebSocket connection to Gemini, and plays back synthesized responses with ultra-low latency. A local Python backend bridges authenticated Google services — Calendar, Tasks, and a SQLite database — so the AI can take real actions on your behalf.
+A real-time voice AI assistant powered by Gemma 4. Tinkr captures microphone audio in the browser using the Web Speech API (SpeechRecognition), sends the transcribed text to a Flask backend, streams back reasoning via Server-Sent Events (SSE), and plays back responses using browser Text-to-Speech (TTS). A local Python backend bridges authenticated Google services — Calendar, Tasks, and a SQLite database — so the AI can take real actions on your behalf.
 
 ---
 
@@ -18,7 +18,7 @@ A real-time, bidirectional voice AI assistant powered by Google's Gemini Live AP
    - [Step 4: Configure Environment Variables](#step-4-configure-environment-variables)
    - [Step 5: Configure Google Cloud Credentials](#step-5-configure-google-cloud-credentials)
    - [Step 6: Authorize Google Services](#step-6-authorize-google-services-generate-tokenjson)
-   - [Step 7: Provide the Gemini API Key](#step-7-provide-the-gemini-api-key)
+   - [Step 7: Provide the Google AI Studio API Key](#step-7-provide-the-google-ai-studio-api-key)
 7. [Running the Application](#running-the-application)
 8. [API Reference](#api-reference)
 9. [Tool Modules](#tool-modules)
@@ -33,16 +33,16 @@ Tinkr is split into two independent layers that communicate with each other and 
 
 **Frontend (Browser, Port 8000)**
 
-- Captures microphone input as raw 16 kHz PCM mono audio
-- Manages the WebSocket connection directly to the Gemini Live API using the `BidiGenerateContent` protocol
-- Renders a real-time visual orb and a scrolling log of tool activity
-- Supports active barge-in: the user can interrupt Tinkr mid-sentence
-- Handles text-to-speech playback of Gemini responses via the Web Speech API
+- Captures user speech using the browser's Web Speech API (SpeechRecognition)
+- Sends transcribed text to the backend via REST API (`/api/chat_stream`)
+- Receives real-time streaming responses via Server-Sent Events (SSE)
+- Renders a real-time visual orb and UI status indicators
+- Handles text-to-speech playback of responses via the Web Speech API (SpeechSynthesis)
 
 **Backend (Python / Flask, Port 5000)**
 
 - Protects long-lived OAuth tokens from being exposed in the browser
-- Provides REST endpoints that the Gemini function-calling workflow invokes
+- Provides REST endpoints that the Gemma 4 function-calling workflow invokes
 - Performs voice biomarker analysis using Zero Crossing Rate, RMS Energy, and Spectral Centroid to detect user mental state
 - Maintains per-user in-memory chat history and wellness state
 
@@ -53,13 +53,11 @@ Tinkr is split into two independent layers that communicate with each other and 
 ```
 Browser (index.html)                  Python Backend (api_server.py)
         |                                          |
-        |-- 16kHz PCM audio (WebSocket) ---------> Gemini Live API
+        |-- Web Speech API (STT)                   |
+        |-- POST /api/chat_stream (Text) --------> Gemma 4 (Google AI Studio)
         |                                          |
-        |<-- Synthesized audio chunks ------------ Gemini Live API
-        |
-        |-- POST /api/transcribe ----------------> Whisper (via OpenAI-compatible SDK)
-        |
-        |-- POST /api/chat ----------------------> Gemma 4 (Google AI Studio)
+        |<-- Server-Sent Events (SSE) chunks ----- Gemma 4
+        |-- Web Speech API (TTS)                   |
         |                                          |
         |                               +----------+----------+
         |                               |          |          |
@@ -71,7 +69,7 @@ Browser (index.html)                  Python Backend (api_server.py)
         |-- POST /api/get_mental_state_context
 ```
 
-The browser communicates with Gemini directly for streaming audio. The Python backend is only invoked for tool execution (calendar, tasks, search, database) and for the voice biomarker analysis pipeline. This design keeps latency minimal while keeping sensitive OAuth credentials server-side.
+The browser communicates with the backend via REST APIs and Server-Sent Events (SSE). The Python backend acts as the orchestrator, invoking Gemma 4 and executing tools (calendar, tasks, search, database). This design keeps sensitive OAuth credentials server-side.
 
 ---
 
@@ -124,43 +122,38 @@ Tinkr/
 
 The following describes the complete lifecycle of a single voice interaction from the moment the user speaks to when Tinkr responds.
 
-### Phase 1: Audio Capture and Streaming
+### Phase 1: Audio Capture and Transcription
 
 1. The user clicks the microphone button in `index.html`.
-2. The browser requests access to the user's microphone via `getUserMedia`.
-3. Raw audio is captured at 16 kHz, mono, PCM format.
-4. Simultaneously, the frontend opens a WebSocket connection to the Gemini Live API (`wss://generativelanguage.googleapis.com`) using the Gemini API key entered by the user at startup.
-5. PCM audio chunks are continuously streamed to Gemini over this WebSocket connection as they are recorded.
+2. The browser requests access to the user's microphone via `getUserMedia` for visualizer effects.
+3. The browser's Web Speech API (`SpeechRecognition`) transcribes the user's speech into text.
 
-### Phase 2: Parallel Biomarker Analysis
+### Phase 2: Biomarker Analysis (Optional)
 
-6. While audio is streaming to Gemini, the frontend also sends a copy of the audio buffer to `POST /api/analyze_audio` on the Python backend.
-7. `biomarker_tool.py` decodes the base64 audio, runs librosa feature extraction (ZCR, RMS, Spectral Centroid), and classifies the user's mental state.
-8. If an anomalous state is detected such as stressed, anxious, or fatigued, an alert message is composed and stored in memory.
-9. On the next chat turn, this emotional context is injected into the system prompt sent to Gemma 4.
+4. The frontend can send audio buffers to `POST /api/analyze_audio` on the Python backend.
+5. `biomarker_tool.py` decodes the audio, runs librosa feature extraction, and classifies the user's mental state.
+6. If an anomalous state is detected, an alert message is composed and stored.
 
-### Phase 3: Gemini Reasoning and Tool Calls
+### Phase 3: Gemma 4 Reasoning and Tool Calls
 
-10. Gemini processes the streaming audio and emits a response event when it determines the user has finished speaking.
-11. If Gemini decides to invoke a tool such as `check_availability`, it sends a `toolCall` event over the WebSocket.
-12. The frontend intercepts this event and dispatches a corresponding HTTP POST request to the appropriate endpoint on the Python backend.
+7. The transcribed text is sent to the backend via `POST /api/chat_stream`.
+8. The backend prompts Gemma 4 using the OpenAI-compatible SDK.
+9. If Gemma 4 decides to invoke a tool, the backend intercepts this and executes the tool locally.
 
 ### Phase 4: Tool Execution
 
-13. `api_server.py` receives the tool request and routes it:
+10. `api_server.py` routes the tool request:
     - `check_availability` and `book_meeting` route to `calendar_tool.py` which calls the Google Calendar API
     - `add_task` and `list_tasks` route to `tasks_tool.py` which calls the Google Tasks API
     - `search_web` routes to `web_tool.py` which queries DuckDuckGo
-    - `get_schema` and `execute_sql` route to `sql_tool.py` which queries `company_data.db`
-14. The tool result is returned as a JSON response to the frontend.
-15. The frontend sends the tool result back to Gemini over the existing WebSocket connection as a `toolResponse` message.
+    - `get_schema` and `execute_sql` route to `sql_tool.py`
+11. The tool result is injected back into the conversation context for Gemma 4 to formulate a final response.
 
 ### Phase 5: Response Synthesis and Playback
 
-16. Gemini receives the tool result, formulates a natural-language response, and streams synthesized audio back over the WebSocket.
-17. The browser receives the audio chunks and queues them for playback.
-18. The user hears Tinkr's spoken response.
-19. The interaction log on screen is updated with tool call cards and status indicators in real time.
+12. The backend streams the natural-language response back to the frontend via Server-Sent Events (SSE).
+13. The browser receives the text chunks and queues them for playback using the Web Speech API (`SpeechSynthesis`).
+14. The user hears Tinkr's spoken response.
 
 ---
 
@@ -169,7 +162,7 @@ The following describes the complete lifecycle of a single voice interaction fro
 - Python 3.9 or higher
 - Google Chrome (required for microphone access and Web Speech API support over HTTP localhost)
 - A Google Cloud project with the Calendar API and Tasks API enabled
-- A Gemini API key from Google AI Studio (free tier is sufficient)
+- A Google AI Studio API key (free tier is sufficient)
 - `pip` or `pip3` available in your terminal
 
 ---
@@ -179,8 +172,8 @@ The following describes the complete lifecycle of a single voice interaction fro
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/coder-irwin/voice_ai_agents_using-Gemini_live_api.git
-cd voice_ai_agents_using-Gemini_live_api
+git clone https://github.com/coder-irwin/tinkr-voice-assistant.git
+cd tinkr-voice-assistant
 ```
 
 ### Step 2: Create a Virtual Environment
@@ -306,11 +299,11 @@ This starts a temporary web server on port 8000. Follow these steps:
 
 A `token.json` file will now exist in the project root. Do not commit this file. It contains your OAuth refresh token.
 
-### Step 7: Provide the Gemini API Key
+### Step 7: Provide the Google AI Studio API Key
 
-The Gemini API key is the credential that allows the browser to connect directly to the Gemini Live API for real-time audio streaming. It is entered at runtime in the browser UI, not stored in any server-side file.
+The Google AI Studio API key is used by the backend to communicate with the Gemma 4 model.
 
-**How to obtain a Gemini API key:**
+**How to obtain an API key:**
 
 1. Go to [Google AI Studio](https://aistudio.google.com/apikey).
 2. Sign in with your Google account.
@@ -318,7 +311,7 @@ The Gemini API key is the credential that allows the browser to connect directly
 
 **How to use it:**
 
-When you open `http://localhost:8000` in Chrome after starting both servers, an input prompt will appear asking for the Gemini API key. Paste the key and click **Connect**. The key is used exclusively in the browser to authenticate the WebSocket connection to Gemini and is never transmitted to or stored by the Python backend.
+Add this key to your `.env` file as `API_KEY=your_key_here`.
 
 ---
 
@@ -365,7 +358,7 @@ Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
 **Using the application:**
 
 1. Open **Google Chrome** and navigate to `http://localhost:8000`.
-2. When prompted, paste your Gemini API key and click **Connect**.
+2. Enter your Name or ID in the prompt and click **Start Session**.
 3. Click the microphone button and speak naturally. Example: *"Tinkr, check if my calendar is free tomorrow afternoon, and if so, book a meeting at 3 PM."*
 4. Tinkr will check your calendar, determine availability, and create the meeting through voice.
 
@@ -618,8 +611,8 @@ Run `auth_server.py` and complete the Google OAuth authorization flow before sta
 **Calendar tool returns "Failed to check availability".**
 Verify that the Google account authorized via `auth_server.py` matches the email set in `HOST_CALENDAR_ID`. Also confirm that both the Calendar API and Tasks API are enabled in your Google Cloud project.
 
-**Connecting with the Gemini API key fails.**
-Verify the key is valid at [Google AI Studio](https://aistudio.google.com/apikey). Ensure there are no leading or trailing spaces when pasting. The Gemini Live API requires access to a model that supports the Live API protocol such as `gemini-2.0-flash-live-001`.
+**Connecting with the Google AI Studio API key fails.**
+Verify the key is valid at [Google AI Studio](https://aistudio.google.com/apikey). Ensure there are no leading or trailing spaces when pasting.
 
 **`pip install -r requirements.txt` fails on `librosa` or `PyAudio`.**
 On macOS, install PortAudio first: `brew install portaudio`. On Linux, install: `sudo apt-get install portaudio19-dev python3-pyaudio`. Then retry the pip install command.

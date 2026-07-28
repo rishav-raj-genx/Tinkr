@@ -11,7 +11,8 @@ from biomarker_tool import analyze_audio_biomarkers
 from calendar_tool import book_meeting, check_availability
 from tasks_tool import add_task, list_tasks
 from sql_tool import get_database_schema, execute_sql_query
-from web_tool import search_web
+from web_tool import search_web, get_news
+from weather_tool import get_weather
 
 app = Flask(__name__)
 CORS(app)
@@ -89,6 +90,7 @@ Your core reasoning engine is Gemma 4.
 The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
 Always check availability first before booking a meeting to prevent double-booking. When booking or checking, format dates strictly to ISO 8601 offset to the user's timezone.
+If any tool returns an error, you must explicitly state the error out loud to the user.
 
 WELLNESS ROLE: You track the user's mental wellbeing through voice biomarker analysis.
 When the user expresses an emotion, be empathetic and non-judgmental.
@@ -136,13 +138,41 @@ tools = [
         "type": "function",
         "function": {
             "name": "search_web",
-            "description": "Searches the web for current news, weather, or information.",
+            "description": "Searches the web for information.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "The search query"}
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_news",
+            "description": "Fetches the latest news headlines.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The news topic"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Fetches current weather for a specified location.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "City name"}
+                },
+                "required": ["location"]
             }
         }
     },
@@ -184,6 +214,7 @@ Your core reasoning engine is Gemma 4.
 The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
 Always check availability first before booking a meeting to prevent double-booking. When booking or checking, format dates strictly to ISO 8601 offset to the user's timezone.
+If any tool returns an error, you must explicitly state the error out loud to the user.
 
 WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an emotion, be empathetic and non-judgmental.
 
@@ -223,6 +254,10 @@ WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an
                                 function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_name", "Guest")))
                             elif function_name == "search_web":
                                 function_response = str(search_web(query=function_args.get("query")))
+                            elif function_name == "get_news":
+                                function_response = str(get_news(query=function_args.get("query")))
+                            elif function_name == "get_weather":
+                                function_response = str(get_weather(location=function_args.get("location")))
                             elif function_name == "add_task":
                                 function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
                             else:
@@ -346,6 +381,14 @@ WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an
                         print("--- PIPELINE STEP 5: WEB SEARCH TOOL ---")
                         function_response = str(search_web(query=function_args.get("query")))
                         print(f" [SEARCH SUCCESS] Retrieved {len(function_response)} chars.")
+                    elif function_name == "get_news":
+                        print("--- PIPELINE STEP 5: NEWS TOOL ---")
+                        function_response = str(get_news(query=function_args.get("query")))
+                        print(f" [NEWS SUCCESS] Retrieved {len(function_response)} chars.")
+                    elif function_name == "get_weather":
+                        print("--- PIPELINE STEP 5: WEATHER TOOL ---")
+                        function_response = str(get_weather(location=function_args.get("location")))
+                        print(f" [WEATHER SUCCESS] Retrieved {len(function_response)} chars.")
                     elif function_name == "add_task":
                         function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
                     else:

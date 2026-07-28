@@ -706,8 +706,7 @@
 
         async function processText(text) {
             setStreamText(`"${text}"`, "user-text");
-            setSpeakingState(true);
-            updateStatus('Thinking...');
+            updateStatus('Tinkr thinking...');
             
             try {
                 const chatRes = await fetch('http://127.0.0.1:5000/api/chat_stream', {
@@ -766,15 +765,13 @@
                 // Flush remaining buffer
                 if (sentenceBuffer.trim()) {
                     queueTTS(sentenceBuffer.trim());
+                } else if (ttsQueue.length === 0 && !isPlayingTts) {
+                    setSpeakingState(false);
                 }
-                
-                updateStatus('Ready');
-                setSpeakingState(false);
                 
             } catch (err) {
                 console.error("Pipeline Error:", err);
                 setStreamText("Network error during processing.", "system-text");
-                updateStatus('Ready');
                 setSpeakingState(false);
             }
         }
@@ -807,16 +804,24 @@
                 utterance.onstart = () => {
                     UI.orbContainer.classList.add('speaking-mode');
                     startAiVisualizer();
+                    setSpeakingState(true);
                 };
                 utterance.onend = () => {
                     if (ttsQueue.length === 0) {
                         UI.orbContainer.classList.remove('speaking-mode');
                         UI.orbContainer.style.setProperty('--ai-scale', '0.5');
                         if(visualizerId) cancelAnimationFrame(visualizerId);
+                        setSpeakingState(false);
                     }
                     if (onEndCallback) onEndCallback();
                 };
                 utterance.onerror = () => {
+                    if (ttsQueue.length === 0) {
+                        UI.orbContainer.classList.remove('speaking-mode');
+                        UI.orbContainer.style.setProperty('--ai-scale', '0.5');
+                        if(visualizerId) cancelAnimationFrame(visualizerId);
+                        setSpeakingState(false);
+                    }
                     if (onEndCallback) onEndCallback();
                 };
                 
@@ -935,7 +940,7 @@
 
         function setSpeakingState(isSpeaking) {
             if (isSpeaking) {
-                updateStatus('Tinkr is speaking...');
+                updateStatus('Tinkr speaking...');
             } else if (!isCallActive) {
                 updateStatus('Ready');
             }
