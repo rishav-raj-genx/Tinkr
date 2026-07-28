@@ -1,11 +1,20 @@
 import os
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 def get_tasks_service():
     if not os.path.exists('token.json'):
         raise Exception("Tasks is not authenticated. Missing token.json.")
+    
     creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'])
+    
+    # Explicitly refresh the token if expired
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+            
     return build('tasks', 'v1', credentials=creds)
 
 def add_task(title: str, notes: str = "") -> str:

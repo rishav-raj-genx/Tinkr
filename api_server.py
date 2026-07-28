@@ -8,7 +8,7 @@ from groq import Groq
 
 # Tools
 from biomarker_tool import analyze_audio_biomarkers
-from calendar_tool import book_meeting, check_availability
+from calendar_tool import book_meeting, check_availability, set_reminder
 from tasks_tool import add_task, list_tasks
 from sql_tool import get_database_schema, execute_sql_query
 from web_tool import search_web, get_news
@@ -91,6 +91,7 @@ The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
 The user's timezone is Indian Standard Time (IST, UTC+05:30). Always use +05:30 offset in ISO 8601 dates.
 Always check availability first before booking a meeting to prevent double-booking.
+Use book_meeting for meetings. Use set_reminder for setting calendar reminders.
 Do NOT use markdown formatting (like asterisks **, hashtags #, etc.). Keep the output as plain conversational text.
 If the user asks for the weather without specifying a location, ask them for their city.
 If any tool returns an error, you MUST explicitly tell the user what went wrong in a friendly way.
@@ -128,9 +129,24 @@ tools = [
                 "properties": {
                     "title": {"type": "string", "description": "Meeting title"},
                     "date_time": {"type": "string", "description": "ISO 8601 date and time (e.g., 2026-05-26T09:00:00+05:30)"},
-                    "guest_name": {"type": "string", "description": "Name or identifier of the guest"}
+                    "guest_name": {"type": "string", "description": "Optional name or identifier of the guest"}
                 },
-                "required": ["title", "date_time", "guest_name"]
+                "required": ["title", "date_time"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_reminder",
+            "description": "Sets a reminder on the calendar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Reminder title"},
+                    "date_time": {"type": "string", "description": "ISO 8601 date and time (e.g., 2026-05-26T09:00:00+05:30)"}
+                },
+                "required": ["title", "date_time"]
             }
         }
     },
@@ -241,6 +257,7 @@ The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
 The user's timezone is Indian Standard Time (IST, UTC+05:30). Always use +05:30 offset in ISO 8601 dates.
 Always check availability first before booking a meeting to prevent double-booking.
+Use book_meeting for meetings. Use set_reminder for setting calendar reminders.
 Do NOT use markdown formatting (like asterisks **, hashtags #, etc.). Keep the output as plain conversational text.
 If the user asks for the weather without specifying a location, ask them for their city.
 If any tool returns an error, you MUST explicitly tell the user what went wrong in a friendly way.{wellness_instruction}"""
@@ -277,6 +294,8 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
                                 function_response = str(check_availability(date_iso=function_args.get("date")))
                             elif function_name == "book_meeting":
                                 function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_name", function_args.get("title", "Meeting"))))
+                            elif function_name == "set_reminder":
+                                function_response = str(set_reminder(title=function_args.get("title"), date_time_iso=function_args.get("date_time")))
                             elif function_name == "search_web":
                                 function_response = str(search_web(query=function_args.get("query")))
                             elif function_name == "get_news":

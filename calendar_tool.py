@@ -1,6 +1,7 @@
 import os
 import datetime
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
@@ -13,7 +14,15 @@ def get_calendar_service():
     try:
         if not os.path.exists('token.json'):
             raise Exception("Calendar is not authenticated. Missing token.json.")
+        
         creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'])
+        
+        # Explicitly refresh the token if expired
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+                
         return build('calendar', 'v3', credentials=creds)
     except Exception as e:
         print(f"❌ CALENDAR AUTH ERROR: {e}")
@@ -92,7 +101,7 @@ def book_meeting(date_time_iso: str, name: str = "User") -> str:
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
 
         event = {
-            'summary': f'Tinkr Meeting: {name}',
+            'summary': f'Meeting: {name}',
             'description': 'Automated booking created via Tinkr Voice Assistant.',
             'start': {
                 'dateTime': start_time.isoformat(),
@@ -111,3 +120,38 @@ def book_meeting(date_time_iso: str, name: str = "User") -> str:
     except Exception as e:
         print(f"❌ CALENDAR ERROR: {e}")
         return f"Failed to book meeting: {str(e)}"
+
+def set_reminder(title: str, date_time_iso: str) -> str:
+    """Creates a short 15-minute event as a reminder on Google Calendar."""
+    try:
+        service = get_calendar_service()
+        start_time = _parse_datetime_ist(date_time_iso)
+        end_time = start_time + datetime.timedelta(minutes=15)
+        calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
+
+        event = {
+            'summary': f'Reminder: {title}',
+            'description': 'Automated reminder created via Tinkr Voice Assistant.',
+            'start': {
+                'dateTime': start_time.isoformat(),
+                'timeZone': 'Asia/Kolkata',
+            },
+            'end': {
+                'dateTime': end_time.isoformat(),
+                'timeZone': 'Asia/Kolkata',
+            },
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': 'popup', 'minutes': 10},
+                ],
+            },
+        }
+
+        event_result = service.events().insert(calendarId=calendar_id, body=event).execute()
+        print(f"✅ CALENDAR REMINDER SUCCESS: {event_result.get('htmlLink')}")
+        return f"Success! Reminder '{title}' set for {start_time.strftime('%I:%M %p on %A, %B %d, %Y')} (IST)."
+        
+    except Exception as e:
+        print(f"❌ CALENDAR REMINDER ERROR: {e}")
+        return f"Failed to set reminder: {str(e)}"
