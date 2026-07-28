@@ -1,37 +1,52 @@
 import os
 import requests
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
 def get_weather(location: str) -> str:
     """
-    Fetches the current weather for a given location using OpenWeatherMap.
+    Fetches the current weather and forecast for a given location.
+    Returns a JSON string so the AI can parse and provide brief or detailed answers.
     """
     api_key = os.getenv("WEATHER_API_KEY")
     if not api_key:
-        return "Error: Weather API key not configured."
+        return json.dumps({"error": "Weather API key not configured."})
         
     print(f"\n [TOOL] Fetching weather for: {location}")
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units=metric"
+    url_current = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units=metric"
+    url_forecast = f"http://api.openweathermap.org/data/2.5/forecast?q={location}&appid={api_key}&units=metric"
     
     try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            weather_desc = data['weather'][0]['description']
-            temp = data['main']['temp']
-            feels_like = data['main']['feels_like']
-            humidity = data['main']['humidity']
-            wind_speed = data['wind']['speed']
+        resp_curr = requests.get(url_current)
+        if resp_curr.status_code == 404:
+            return json.dumps({"error": f"Location '{location}' not found."})
+        elif resp_curr.status_code != 200:
+            return json.dumps({"error": f"Failed to fetch weather. Status code: {resp_curr.status_code}"})
             
-            return (f"Weather in {location}: {weather_desc}. "
-                    f"Temperature: {temp}°C (feels like {feels_like}°C). "
-                    f"Humidity: {humidity}%. Wind speed: {wind_speed} m/s.")
-        elif response.status_code == 404:
-            return f"Location '{location}' not found."
-        else:
-            return f"Failed to fetch weather. Status code: {response.status_code}"
+        data_curr = resp_curr.json()
+        
+        # Try to get forecast
+        resp_fore = requests.get(url_forecast)
+        forecast_list = []
+        if resp_fore.status_code == 200:
+            data_fore = resp_fore.json()
+            if 'list' in data_fore:
+                for item in data_fore['list'][:4]: # next 12 hours
+                    forecast_list.append({
+                        "time": item.get('dt_txt'),
+                        "temp": item['main']['temp'],
+                        "description": item['weather'][0]['description']
+                    })
+        
+        result = {
+            "location": data_curr.get('name', location),
+            "current": data_curr,
+            "forecast_next_12h": forecast_list
+        }
+        return json.dumps(result)
+        
     except Exception as e:
         print(f" [TOOL ERROR] Weather API failed: {e}")
-        return f"Error fetching weather: {str(e)}"
+        return json.dumps({"error": f"Error fetching weather: {str(e)}"})

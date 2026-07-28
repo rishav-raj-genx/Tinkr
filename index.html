@@ -182,12 +182,11 @@
             background: var(--surface);
         }
 
-        /* ── Status Indicator ── */
         .status-container {
             position: absolute;
-            top: 50%;
+            top: 8vh;
             left: 50%;
-            transform: translate(-50%, -180px);
+            transform: translateX(-50%);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -209,7 +208,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
+            padding-top: 15vh; /* shift everything up */
             flex: 1;
             width: 100%;
             position: relative;
@@ -279,22 +279,61 @@
             opacity: 0.15;
         }
 
-        /* ── Minimal Transcript ── */
+        /* ── Scrollable Transcript ── */
         .transcript-wrapper {
             position: absolute;
-            bottom: 3rem;
+            bottom: 2rem;
             width: 100%;
-            max-width: 600px;
-            height: 140px;
-            padding: 0 2rem;
+            max-width: 800px;
+            height: 45vh; /* Half the screen */
+            padding: 1rem 2rem;
             display: flex;
             flex-direction: column;
-            justify-content: flex-end;
+            justify-content: flex-start;
             align-items: center;
             text-align: center;
             z-index: 5;
-            mask-image: linear-gradient(to bottom, transparent, black 40%);
-            -webkit-mask-image: linear-gradient(to bottom, transparent, black 40%);
+            overflow-y: auto;
+            border-top: 1px solid var(--border);
+            background: linear-gradient(to bottom, var(--bg-color), transparent);
+        }
+        
+        /* Custom scrollbar for transcript */
+        .transcript-wrapper::-webkit-scrollbar {
+            width: 6px;
+        }
+        .transcript-wrapper::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .transcript-wrapper::-webkit-scrollbar-thumb {
+            background-color: var(--border);
+            border-radius: 10px;
+        }
+
+        .controls-container {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+            margin-top: 2rem;
+            z-index: 10;
+        }
+
+        .play-pause-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .play-pause-btn:hover {
+            background: var(--surface-elevated);
         }
 
         .transcript-stream {
@@ -522,6 +561,12 @@
                 <span class="material-icons-round">mic</span>
             </button>
         </div>
+        
+        <div class="controls-container" id="controlsContainer" style="opacity: 0; pointer-events: none; transition: opacity 0.3s;">
+            <button class="play-pause-btn" id="playPauseBtn" title="Play / Pause">
+                <span class="material-icons-round" id="playPauseIcon">pause</span>
+            </button>
+        </div>
 
         <div class="transcript-wrapper">
             <div class="transcript-stream" id="transcriptStream">
@@ -569,6 +614,9 @@
             statusText: document.getElementById('statusText'),
             transcriptStream: document.getElementById('transcriptStream'),
             orbContainer: document.getElementById('orbContainer'),
+            controlsContainer: document.getElementById('controlsContainer'),
+            playPauseBtn: document.getElementById('playPauseBtn'),
+            playPauseIcon: document.getElementById('playPauseIcon'),
             sidebar: document.getElementById('sidebar'),
             historyBtn: document.getElementById('historyBtn'),
             closeSidebar: document.getElementById('closeSidebar'),
@@ -584,6 +632,8 @@
         let visualizerId = null;
         let ttsQueue = [];
         let isPlayingTts = false;
+        let lastFullResponse = "";
+        let isManualPause = false;
         
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
@@ -769,6 +819,12 @@
                     setSpeakingState(false);
                 }
                 
+                lastFullResponse = fullResponse;
+                if (lastFullResponse.trim().length > 0) {
+                    UI.controlsContainer.style.opacity = '1';
+                    UI.controlsContainer.style.pointerEvents = 'auto';
+                }
+                
             } catch (err) {
                 console.error("Pipeline Error:", err);
                 setStreamText("Network error during processing.", "system-text");
@@ -784,7 +840,12 @@
         
         function processTtsQueue() {
             if (isPlayingTts || ttsQueue.length === 0) return;
+            if (isManualPause) {
+                ttsQueue = [];
+                return;
+            }
             isPlayingTts = true;
+            UI.playPauseIcon.innerText = 'pause';
             const text = ttsQueue.shift();
             speakText(text, () => {
                 isPlayingTts = false;
@@ -812,6 +873,7 @@
                         UI.orbContainer.style.setProperty('--ai-scale', '0.5');
                         if(visualizerId) cancelAnimationFrame(visualizerId);
                         setSpeakingState(false);
+                        UI.playPauseIcon.innerText = 'play_arrow';
                     }
                     if (onEndCallback) onEndCallback();
                 };
@@ -821,6 +883,7 @@
                         UI.orbContainer.style.setProperty('--ai-scale', '0.5');
                         if(visualizerId) cancelAnimationFrame(visualizerId);
                         setSpeakingState(false);
+                        UI.playPauseIcon.innerText = 'play_arrow';
                     }
                     if (onEndCallback) onEndCallback();
                 };
@@ -858,6 +921,27 @@
             }
             render();
         }
+
+        // ── Play/Pause Logic ──
+        UI.playPauseBtn.addEventListener('click', () => {
+            if (window.speechSynthesis.speaking) {
+                // Pause / Cancel currently playing response
+                window.speechSynthesis.cancel();
+                ttsQueue = [];
+                isPlayingTts = false;
+                isManualPause = true;
+                UI.playPauseIcon.innerText = 'play_arrow';
+                setSpeakingState(false);
+                UI.orbContainer.classList.remove('speaking-mode');
+                UI.orbContainer.style.setProperty('--ai-scale', '0.5');
+            } else {
+                // Replay from beginning
+                if (lastFullResponse) {
+                    isManualPause = false;
+                    queueTTS(lastFullResponse);
+                }
+            }
+        });
 
         // ── Wellness Modal Logic ──
         function triggerWellnessPrompt(bioData) {
