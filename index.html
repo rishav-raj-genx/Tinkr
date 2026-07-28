@@ -643,6 +643,7 @@
             recognition.interimResults = true;
         }
         let audioChunks = [];
+        let pcmProcessor = null;
         let mediaStream = null;
         let currentUserId = '';
         let pendingBiomarkerData = null;
@@ -681,11 +682,21 @@
                 try {
                     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                     micAnalyser = audioContext.createAnalyser();
                     micAnalyser.fftSize = 256;
                     const source = audioContext.createMediaStreamSource(mediaStream);
                     source.connect(micAnalyser);
+                    
+                    audioChunks = [];
+                    pcmProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                    source.connect(pcmProcessor);
+                    pcmProcessor.connect(audioContext.destination);
+                    pcmProcessor.onaudioprocess = (e) => {
+                        const channelData = e.inputBuffer.getChannelData(0);
+                        audioChunks.push(new Float32Array(channelData));
+                    };
+                    
                     startVisualizer();
                     
                     if (recognition) {
@@ -709,9 +720,66 @@
                             resetCallBtnUI();
                             setStreamText("Microphone access denied or error.", "system-text");
                         };
-                        recognition.onend = () => {
+                        recognition.onend = async () => {
+                            if (pcmProcessor) {
+                                pcmProcessor.disconnect();
+                                pcmProcessor = null;
+                            }
+                            
+                            let emotionContext = "";
+                            if (audioChunks.length > 0) {
+                                let totalLength = audioChunks.reduce((acc, val) => acc + val.length, 0);
+                                let result = new Float32Array(totalLength);
+                                let offset = 0;
+                                for (let chunk of audioChunks) {
+                                    result.set(chunk, offset);
+                                    offset += chunk.length;
+                                }
+                                let int16Array = new Int16Array(result.length);
+                                for (let i = 0; i < result.length; i++) {
+                                    let s = Math.max(-1, Math.min(1, result[i]));
+                                    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                                }
+                                let binary = '';
+                                let bytes = new Uint8Array(int16Array.buffer);
+                                let len = bytes.byteLength;
+                                for (let i = 0; i < len; i++) {
+                                    binary += String.fromCharCode(bytes[i]);
+                                }
+                                let base64Audio = btoa(binary);
+
+                                try {
+                                    const biomarkerRes = await fetch('http://127.0.0.1:5000/api/analyze_audio', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ audio_base64: base64Audio })
+                                    });
+                                    const biomarkerData = await biomarkerRes.json();
+                                    if (biomarkerData.message) {
+                                        emotionContext = biomarkerData.message;
+                                        
+                                        if (biomarkerData.alert) {
+                                            await fetch('http://127.0.0.1:5000/api/save_mental_state', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    user_id: currentUserId,
+                                                    predicted_state: biomarkerData.predicted_state,
+                                                    user_confirmed: false,
+                                                    mean_zcr: biomarkerData.mean_zcr,
+                                                    rms_variance: biomarkerData.rms_variance,
+                                                    voice_energy_level: biomarkerData.voice_energy_level
+                                                })
+                                            });
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error("Biomarker error:", e);
+                                }
+                            }
+
                             if (window.currentTranscript.trim()) {
-                                processText(window.currentTranscript.trim());
+                                processText(window.currentTranscript.trim(), emotionContext);
                                 window.currentTranscript = "";
                             }
                             isCallActive = false;
@@ -754,7 +822,7 @@
             UI.orbContainer.style.setProperty('--ai-scale', '0.5');
         }
 
-        async function processText(text) {
+        async function processText(text, emotionContext = "") {
             setStreamText(`"${text}"`, "user-text");
             updateStatus('Tinkr thinking...');
             
@@ -765,7 +833,7 @@
                     body: JSON.stringify({
                         text: text,
                         user_id: currentUserId,
-                        emotion_context: '' // Deprecated for ultra-low latency
+                        emotion_context: emotionContext
                     })
                 });
                 
