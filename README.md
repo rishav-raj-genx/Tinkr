@@ -59,10 +59,10 @@ Browser (index.html)                  Python Backend (api_server.py)
         |<-- Server-Sent Events (SSE) chunks ----- Gemma 4
         |-- Web Speech API (TTS)                   |
         |                                          |
-        |                               +----------+----------+
-        |                               |          |          |
-        |                        Google Calendar  DuckDuckGo  SQLite DB
-        |                        Google Tasks     Search
+        |                               +----------+----------+-----------+
+        |                               |          |          |           |
+        |                        Google Calendar  DuckDuckGo  SQLite DB  OpenWeatherMap
+        |                        Google Tasks     Search                 Weather API
         |
         |-- POST /api/analyze_audio -----------> biomarker_tool.py (librosa)
         |-- POST /api/save_mental_state
@@ -107,6 +107,9 @@ Tinkr/
 |-- web_tool.py             DuckDuckGo web search wrapper.
 |                           Function: search_web(query) returns the top 3 results.
 |
+|-- weather_tool.py         OpenWeatherMap integration.
+|                           Function: get_weather(location) returns current weather and 12-hour forecast.
+|
 |-- setup_db.py             Utility script to initialize company_data.db with
 |                           sample data for SQL tool demonstrations.
 |
@@ -132,7 +135,7 @@ The following describes the complete lifecycle of a single voice interaction fro
 
 4. The frontend can send audio buffers to `POST /api/analyze_audio` on the Python backend.
 5. `biomarker_tool.py` decodes the audio, runs librosa feature extraction, and classifies the user's mental state.
-6. If an anomalous state is detected, an alert message is composed and stored.
+6. If an anomalous state is detected, the frontend displays an interactive wellness modal. If the user confirms, the emotional context is injected into the LLM prompt.
 
 ### Phase 3: Gemma 4 Reasoning and Tool Calls
 
@@ -147,6 +150,7 @@ The following describes the complete lifecycle of a single voice interaction fro
     - `add_task` and `list_tasks` route to `tasks_tool.py` which calls the Google Tasks API
     - `search_web` routes to `web_tool.py` which queries DuckDuckGo
     - `get_schema` and `execute_sql` route to `sql_tool.py`
+    - `get_weather` routes to `weather_tool.py` which queries OpenWeatherMap
 11. The tool result is injected back into the conversation context for Gemma 4 to formulate a final response.
 
 ### Phase 5: Response Synthesis and Playback
@@ -214,6 +218,7 @@ Key packages installed:
 | `openai` | OpenAI-compatible SDK used to call Gemma 4 on Google AI Studio |
 | `librosa`, `numpy` | Audio feature extraction for biomarker analysis |
 | `duckduckgo-search` | Web search capability |
+| `requests` | HTTP requests for external APIs like OpenWeatherMap |
 | `python-dotenv` | Loads `.env` configuration at startup |
 | `websockets` | WebSocket support library |
 
@@ -579,6 +584,10 @@ Uses the same `token.json` credential to interact with Google Tasks. `add_task` 
 
 Wraps the `duckduckgo-search` library. Performs a text search and returns the top 3 results formatted as a numbered list of titles and snippets. No API key is required.
 
+### weather_tool.py
+
+Fetches the current weather and a 12-hour forecast for a given location using the OpenWeatherMap API. Requires `WEATHER_API_KEY` to be set in `.env`.
+
 ### sql_tool.py
 
 Provides a read-only SQL interface to `company_data.db`. The `get_database_schema` function returns table and column definitions so the language model can construct valid queries autonomously without prior knowledge of the schema. Only SELECT statements are allowed to execute.
@@ -597,6 +606,7 @@ Provides a read-only SQL interface to `company_data.db`. The `get_database_schem
 | `FRONTEND_URL` | Yes | Base URL of the frontend. Used for CORS headers |
 | `SECRET_KEY` | Yes | Random secret string for Flask session cookie signing |
 | `API_KEY` | Yes | Google AI Studio API key used by the backend to call Gemma 4 |
+| `WEATHER_API_KEY` | Yes | OpenWeatherMap API key for fetching weather and forecasts |
 
 ---
 
