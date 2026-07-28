@@ -759,7 +759,10 @@
                                         pendingBiomarkerData = biomarkerData;
                                         const isConfirmed = await triggerWellnessPrompt(biomarkerData);
                                         if (isConfirmed && biomarkerData.message) {
-                                            emotionContext = biomarkerData.message;
+                                            emotionContext = `[USER-CONFIRMED WELLNESS ALERT] The user has CONFIRMED they are feeling ${biomarkerData.predicted_state}. ` +
+                                                `Voice energy: ${biomarkerData.voice_energy_level}. ` +
+                                                `You MUST first warmly acknowledge their ${biomarkerData.predicted_state} state and offer comfort like a caring friend before answering their question. ` +
+                                                `Suggest something calming they can do right now.`;
                                         }
                                     }
                                 } catch (e) {

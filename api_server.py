@@ -276,7 +276,7 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
                             if function_name == "check_availability":
                                 function_response = str(check_availability(date_iso=function_args.get("date")))
                             elif function_name == "book_meeting":
-                                function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_name", "Guest")))
+                                function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_name", function_args.get("title", "Meeting"))))
                             elif function_name == "search_web":
                                 function_response = str(search_web(query=function_args.get("query")))
                             elif function_name == "get_news":
@@ -285,8 +285,10 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
                                 function_response = str(get_weather(location=function_args.get("location")))
                             elif function_name == "add_task":
                                 function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
+                            elif function_name == "list_tasks":
+                                function_response = str(list_tasks())
                             else:
-                                function_response = "Unknown tool."
+                                function_response = f"Error: Unknown tool '{function_name}'. Please tell the user this action is not supported."
                         except Exception as ex:
                             function_response = f"Error executing tool: {ex}"
                         
@@ -370,94 +372,6 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
-
-    print(f" [CHAT REQUEST] Prompting {MODEL_NAME} for user '{user_id}'...")
-    
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto"
-        )
-        
-        response_message = response.choices[0].message
-        
-        # Check if the model decided to call a tool
-        if response_message.tool_calls:
-            messages.append(response_message) # Append assistant's tool call request to history
-            
-            for tool_call in response_message.tool_calls:
-                function_name = tool_call.function.name
-                
-                try:
-                    function_args = json.loads(tool_call.function.arguments)
-                    print(f" [TOOL CALL] {function_name}({function_args})")
-                    
-                    if function_name == "check_availability":
-                        print("--- PIPELINE STEP 4: GOOGLE CALENDAR TOOL ---")
-                        function_response = str(check_availability(date_iso=function_args.get("date")))
-                        print(f" [CALENDAR SUCCESS] {function_response}")
-                    elif function_name == "book_meeting":
-                        print("--- PIPELINE STEP 4: GOOGLE CALENDAR TOOL ---")
-                        function_response = str(book_meeting(date_time_iso=function_args.get("date_time"), name=function_args.get("guest_email")))
-                        print(f" [CALENDAR SUCCESS] {function_response}")
-                    elif function_name == "search_web":
-                        print("--- PIPELINE STEP 5: WEB SEARCH TOOL ---")
-                        function_response = str(search_web(query=function_args.get("query")))
-                        print(f" [SEARCH SUCCESS] Retrieved {len(function_response)} chars.")
-                    elif function_name == "get_news":
-                        print("--- PIPELINE STEP 5: NEWS TOOL ---")
-                        function_response = str(get_news(query=function_args.get("query")))
-                        print(f" [NEWS SUCCESS] Retrieved {len(function_response)} chars.")
-                    elif function_name == "get_weather":
-                        print("--- PIPELINE STEP 5: WEATHER TOOL ---")
-                        function_response = str(get_weather(location=function_args.get("location")))
-                        print(f" [WEATHER SUCCESS] Retrieved {len(function_response)} chars.")
-                    elif function_name == "add_task":
-                        function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
-                    else:
-                        function_response = "Unknown tool."
-                except Exception as ex:
-                    print(f" [TOOL ERROR] Failed to execute {function_name}: {ex}")
-                    function_response = f"Error executing tool: {ex}"
-                
-                messages.append({
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "name": function_name,
-                    "content": function_response,
-                })
-            
-            # Second call to get the final response based on tool output
-            second_response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages
-            )
-            final_text = second_response.choices[0].message.content
-        else:
-            final_text = response_message.content
-            
-        print(f" [CHAT SUCCESS] Final response generated.")
-        
-        # Strip <thought> and <think> tags (and their contents) from final_text so TTS doesn't read them
-        import re
-        final_text = re.sub(r'<thought>.*?</thought>', '', final_text, flags=re.DOTALL)
-        final_text = re.sub(r'<think>.*?</think>', '', final_text, flags=re.DOTALL)
-        final_text = final_text.strip()
-        
-        # Update history
-        chat_histories[user_id].append({"role": "user", "content": user_text})
-        chat_histories[user_id].append({"role": "assistant", "content": final_text})
-        
-    except Exception as e:
-        print(f" [CHAT ERROR] {e}")
-        final_text = "I'm having trouble connecting to my brain right now."
-
-    print(f" [CHAT RESPONSE] {final_text}")
-    print("--- PIPELINE STEP 6: TTS --- (Sent to frontend for Web Speech API playback)")
-    return jsonify({"success": True, "text": final_text})
-
 
 # Keep existing endpoints just in case frontend relies on them directly
 @app.route('/api/book_meeting', methods=['POST'])
