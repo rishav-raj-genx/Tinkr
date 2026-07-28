@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "tinkr"
+version = "1.0.0"
+description = "A real-time voice AI assistant powered by Gemma 4"
+readme = "README.md"
+authors = [{ name = "rishav-raj-genx" }]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "blinker>=1.9",
+    "certifi>=2026",
+    "cffi>=2.0",
+    "charset-normalizer>=3.4",
+    "click>=8.4",
+    "cryptography>=48",
+    "flask-cors>=6.0",
+    "flask>=3.1",
+    "google-api-core>=2.30",
+    "google-api-python-client>=2.196",
+    "google-auth-httplib2>=0.4",
+    "google-auth-oauthlib>=1.4",
+    "google-auth>=2.53",
+    "googleapis-common-protos>=1.75",
+    "httplib2>=0.31",
+    "idna>=3.16",
+    "itsdangerous>=2.2",
+    "jinja2>=3.1",
+    "markupsafe>=3.0",
+    "numpy",
+    "oauthlib>=3.3",
+    "openai",
+    "proto-plus>=1.28",
+    "protobuf>=7.35",
+    "pyasn1-modules>=0.4",
+    "pyasn1>=0.6",
+    "pyaudio>=0.2",
+    "pycparser>=3.0",
+    "pyparsing>=3.3",
+    "python-dotenv>=1.2",
+    "requests-oauthlib>=2.0",
+    "requests>=2.34",
+    "soundfile",
+    "uritemplate>=4.2",
+    "urllib3>=2.7",
+    "websockets>=16.0",
+    "werkzeug>=3.1",
+    "librosa",
+    "duckduckgo-search",
+    "groq",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.5",
+]
+
+[tool.setuptools]
+packages = ["tinkr"]
+package-dir = { "tinkr" = "." }
+include-package-data = false
+
+[tool.setuptools.package-data]
+tinkr = ["index.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "network: marks tests that require network access (deselect with '-m \"not network\"')",
+    "external_api: marks tests that call external APIs (deselect with '-m \"not external_api\"')",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["temp.js"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.format]
+quote-style = "double"

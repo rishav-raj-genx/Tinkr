@@ -6,92 +6,93 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/tasks",
+]
+
+
+def _parse_datetime(date_str: str) -> datetime.datetime:
+    """Cross-platform ISO 8601 datetime parser with fallback."""
+    try:
+        return datetime.datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+    except ValueError:
+        pass
+    clean = date_str.split("+")[0].replace("Z", "")
+    if "." in clean:
+        clean = clean.split(".")[0]
+    if "T" in clean:
+        return datetime.datetime.strptime(clean, "%Y-%m-%dT%H:%M:%S")
+    return datetime.datetime.strptime(clean[:10], "%Y-%m-%d")
+
+
 def get_calendar_service():
-    if not os.path.exists('token.json'):
+    if not os.path.exists("token.json"):
         raise Exception("Calendar is not authenticated. Missing token.json.")
-    creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'])
-    return build('calendar', 'v3', credentials=creds)
+    creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    return build("calendar", "v3", credentials=creds)
+
 
 def check_availability(date_iso: str) -> str:
     """Checks Google Calendar for busy slots on a specific date."""
     try:
         service = get_calendar_service()
-        
-        # Cross-platform / cross-version robust ISO datetime parsing
-        try:
-            dt = datetime.datetime.fromisoformat(date_iso.replace('Z', '+00:00'))
-        except ValueError:
-            # Clean string format fallback if older Python versions struggle with suffix colons or milliseconds
-            # Strip timezone offset from the end (e.g. +05:30)
-            clean_str = date_iso.split('+')[0]
-            if 'Z' in clean_str:
-                clean_str = clean_str.replace('Z', '')
-            if '.' in clean_str:
-                clean_str = clean_str.split('.')[0]
-                
-            if 'T' in clean_str:
-                dt = datetime.datetime.strptime(clean_str, "%Y-%m-%dT%H:%M:%S")
-            else:
-                dt = datetime.datetime.strptime(clean_str[:10], "%Y-%m-%d")
-        
+        dt = _parse_datetime(date_iso)
         start_of_day = dt.replace(hour=0, minute=0, second=0).isoformat()
         end_of_day = dt.replace(hour=23, minute=59, second=59).isoformat()
-        
+
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
-        
-        events_result = service.events().list(
-            calendarId=calendar_id, timeMin=start_of_day, timeMax=end_of_day, 
-            singleEvents=True, orderBy='startTime'
-        ).execute()
-        
-        events = events_result.get('items', [])
-        
+        events_result = (
+            service.events()
+            .list(
+                calendarId=calendar_id,
+                timeMin=start_of_day,
+                timeMax=end_of_day,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
+        events = events_result.get("items", [])
         if not events:
             return f"The calendar is completely free on {dt.strftime('%Y-%m-%d')}."
-            
+
         busy_times = []
         for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            end = event['end'].get('dateTime', event['end'].get('date'))
-            summary = event.get('summary', 'Busy')
+            start = event["start"].get("dateTime", event["start"].get("date"))
+            end = event["end"].get("dateTime", event["end"].get("date"))
+            summary = event.get("summary", "Busy")
             busy_times.append(f"- Blocked from {start} to {end} ({summary})")
-            
-        return f"Existing events on {dt.strftime('%Y-%m-%d')}:\n" + "\n".join(busy_times)
-        
+
+        return (
+            f"Existing events on {dt.strftime('%Y-%m-%d')}:\n"
+            + "\n".join(busy_times)
+        )
     except Exception as e:
-        print(f"❌ CALENDAR ERROR: {e}")
+        print(f" CALENDAR ERROR: {e}")
         return f"Failed to check availability: {str(e)}"
+
 
 def book_meeting(date_time_iso: str, name: str = "User") -> str:
     """Creates a 30-minute Google Calendar meeting."""
     try:
         service = get_calendar_service()
-        
-        # Cross-platform / cross-version robust ISO datetime parsing
-        try:
-            start_time = datetime.datetime.fromisoformat(date_time_iso.replace('Z', '+00:00'))
-        except ValueError:
-            clean_str = date_time_iso.split('+')[0]
-            if 'Z' in clean_str:
-                clean_str = clean_str.replace('Z', '')
-            if '.' in clean_str:
-                clean_str = clean_str.split('.')[0]
-            start_time = datetime.datetime.strptime(clean_str, "%Y-%m-%dT%H:%M:%S")
-            
+        start_time = _parse_datetime(date_time_iso)
         end_time = start_time + datetime.timedelta(minutes=30)
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
 
         event = {
-            'summary': f'Tinkr Voice Assistant: {name}',
-            'description': 'Automated booking created via Tinkr Voice Assistant.',
-            'start': {'dateTime': start_time.isoformat()},
-            'end': {'dateTime': end_time.isoformat()},
+            "summary": f"Tinkr Voice Assistant: {name}",
+            "description": "Automated booking created via Tinkr Voice Assistant.",
+            "start": {"dateTime": start_time.isoformat()},
+            "end": {"dateTime": end_time.isoformat()},
         }
 
-        event_result = service.events().insert(calendarId=calendar_id, body=event).execute()
-        print(f"✅ REAL CALENDAR BOOKING SUCCESS: {event_result.get('htmlLink')}")
+        event_result = (
+            service.events().insert(calendarId=calendar_id, body=event).execute()
+        )
+        print(f" REAL CALENDAR BOOKING SUCCESS: {event_result.get('htmlLink')}")
         return f"Success! Meeting booked on Google Calendar for {name}."
-        
     except Exception as e:
-        print(f"❌ CALENDAR ERROR: {e}")
+        print(f" CALENDAR ERROR: {e}")
         return f"Failed to book meeting: {str(e)}"
