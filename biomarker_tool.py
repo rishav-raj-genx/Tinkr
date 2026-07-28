@@ -53,7 +53,7 @@ def analyze_audio_biomarkers(base64_audio: str) -> dict:
             - message (str): System message for LLM injection
             - suggestions (list[str]): Wellbeing suggestions based on detected state
     """
-    global _baseline
+    global _baseline, _baseline_buffer
     
     try:
         # Decode base64 to binary PCM

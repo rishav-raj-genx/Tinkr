@@ -40,12 +40,17 @@ def get_weather(location: str) -> str:
                         "description": item['weather'][0]['description']
                     })
         
-        result = {
-            "location": data_curr.get('name', location),
-            "current": data_curr,
-            "forecast_next_12h": forecast_list
-        }
-        return json.dumps(result)
+        current_temp = data_curr.get('main', {}).get('temp', 'Unknown')
+        current_desc = data_curr.get('weather', [{}])[0].get('description', 'Unknown')
+        
+        result_str = f"Current weather in {data_curr.get('name', location)}: {current_temp}°C and {current_desc}."
+        if forecast_list:
+            result_str += " Forecast for the next few hours: "
+            for f in forecast_list[:2]:
+                time_only = f['time'].split()[1][:5]
+                result_str += f"At {time_only}, {f['temp']}°C ({f['description']}). "
+                
+        return result_str
         
     except Exception as e:
         print(f" [TOOL ERROR] Weather API failed: {e}")
