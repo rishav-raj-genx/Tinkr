@@ -51,8 +51,8 @@ def _parse_datetime_ist(date_str: str) -> datetime.datetime:
     else:
         dt = datetime.datetime.strptime(clean_str[:10], "%Y-%m-%d")
 
-    # Attach IST since we lost the timezone
-    return dt.replace(tzinfo=IST)
+    # Return naive datetime so we can apply the calendar's native timezone
+    return dt
 
 def check_availability(date_iso: str) -> str:
     """Checks Google Calendar for busy slots on a specific date."""
@@ -65,13 +65,17 @@ def check_availability(date_iso: str) -> str:
         
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
         
+        # Fetch the calendar's timezone
+        cal_meta = service.calendars().get(calendarId=calendar_id).execute()
+        cal_tz = cal_meta.get('timeZone', 'UTC')
+        
         events_result = service.events().list(
             calendarId=calendar_id,
             timeMin=start_of_day.isoformat(),
             timeMax=end_of_day.isoformat(),
             singleEvents=True,
             orderBy='startTime',
-            timeZone='Asia/Kolkata'
+            timeZone=cal_tz
         ).execute()
         
         events = events_result.get('items', [])
@@ -100,22 +104,26 @@ def book_meeting(date_time_iso: str, name: str = "User") -> str:
         end_time = start_time + datetime.timedelta(minutes=30)
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
 
+        # Fetch the calendar's native timezone so the event visually aligns
+        cal_meta = service.calendars().get(calendarId=calendar_id).execute()
+        cal_tz = cal_meta.get('timeZone', 'UTC')
+
         event = {
             'summary': f'Meeting: {name}',
             'description': 'Automated booking created via Tinkr Voice Assistant.',
             'start': {
                 'dateTime': start_time.isoformat(),
-                'timeZone': 'Asia/Kolkata',
+                'timeZone': cal_tz,
             },
             'end': {
                 'dateTime': end_time.isoformat(),
-                'timeZone': 'Asia/Kolkata',
+                'timeZone': cal_tz,
             },
         }
 
         event_result = service.events().insert(calendarId=calendar_id, body=event).execute()
         print(f"✅ CALENDAR BOOKING SUCCESS: {event_result.get('htmlLink')}")
-        return f"Success! Meeting '{name}' booked for {start_time.strftime('%I:%M %p on %A, %B %d, %Y')} (IST)."
+        return f"Success! Meeting '{name}' booked for {start_time.strftime('%I:%M %p on %A, %B %d, %Y')}."
         
     except Exception as e:
         print(f"❌ CALENDAR ERROR: {e}")
@@ -129,16 +137,20 @@ def set_reminder(title: str, date_time_iso: str) -> str:
         end_time = start_time + datetime.timedelta(minutes=15)
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
 
+        # Fetch the calendar's native timezone
+        cal_meta = service.calendars().get(calendarId=calendar_id).execute()
+        cal_tz = cal_meta.get('timeZone', 'UTC')
+
         event = {
             'summary': f'Reminder: {title}',
             'description': 'Automated reminder created via Tinkr Voice Assistant.',
             'start': {
                 'dateTime': start_time.isoformat(),
-                'timeZone': 'Asia/Kolkata',
+                'timeZone': cal_tz,
             },
             'end': {
                 'dateTime': end_time.isoformat(),
-                'timeZone': 'Asia/Kolkata',
+                'timeZone': cal_tz,
             },
             'reminders': {
                 'useDefault': False,
@@ -150,7 +162,7 @@ def set_reminder(title: str, date_time_iso: str) -> str:
 
         event_result = service.events().insert(calendarId=calendar_id, body=event).execute()
         print(f"✅ CALENDAR REMINDER SUCCESS: {event_result.get('htmlLink')}")
-        return f"Success! Reminder '{title}' set for {start_time.strftime('%I:%M %p on %A, %B %d, %Y')} (IST)."
+        return f"Success! Reminder '{title}' set for {start_time.strftime('%I:%M %p on %A, %B %d, %Y')}."
         
     except Exception as e:
         print(f"❌ CALENDAR REMINDER ERROR: {e}")
