@@ -6,57 +6,78 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Indian Standard Time offset
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 def get_calendar_service():
-    if not os.path.exists('token.json'):
-        raise Exception("Calendar is not authenticated. Missing token.json.")
-    creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'])
-    return build('calendar', 'v3', credentials=creds)
+    try:
+        if not os.path.exists('token.json'):
+            raise Exception("Calendar is not authenticated. Missing token.json.")
+        creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'])
+        return build('calendar', 'v3', credentials=creds)
+    except Exception as e:
+        print(f"❌ CALENDAR AUTH ERROR: {e}")
+        raise
+
+def _parse_datetime_ist(date_str: str) -> datetime.datetime:
+    """Parse an ISO datetime string and ensure it has IST timezone."""
+    try:
+        dt = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        # Convert to IST if it has timezone info
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(IST)
+        else:
+            dt = dt.replace(tzinfo=IST)
+        return dt
+    except ValueError:
+        pass
+
+    # Fallback: strip timezone suffix and parse manually
+    clean_str = date_str.split('+')[0].split('Z')[0]
+    if '.' in clean_str:
+        clean_str = clean_str.split('.')[0]
+
+    if 'T' in clean_str:
+        dt = datetime.datetime.strptime(clean_str, "%Y-%m-%dT%H:%M:%S")
+    else:
+        dt = datetime.datetime.strptime(clean_str[:10], "%Y-%m-%d")
+
+    # Attach IST since we lost the timezone
+    return dt.replace(tzinfo=IST)
 
 def check_availability(date_iso: str) -> str:
     """Checks Google Calendar for busy slots on a specific date."""
     try:
         service = get_calendar_service()
-        
-        # Cross-platform / cross-version robust ISO datetime parsing
-        try:
-            dt = datetime.datetime.fromisoformat(date_iso.replace('Z', '+00:00'))
-        except ValueError:
-            # Clean string format fallback if older Python versions struggle with suffix colons or milliseconds
-            # Strip timezone offset from the end (e.g. +05:30)
-            clean_str = date_iso.split('+')[0]
-            if 'Z' in clean_str:
-                clean_str = clean_str.replace('Z', '')
-            if '.' in clean_str:
-                clean_str = clean_str.split('.')[0]
-                
-            if 'T' in clean_str:
-                dt = datetime.datetime.strptime(clean_str, "%Y-%m-%dT%H:%M:%S")
-            else:
-                dt = datetime.datetime.strptime(clean_str[:10], "%Y-%m-%d")
-        
-        start_of_day = dt.replace(hour=0, minute=0, second=0).isoformat()
-        end_of_day = dt.replace(hour=23, minute=59, second=59).isoformat()
+        dt = _parse_datetime_ist(date_iso)
+
+        start_of_day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = dt.replace(hour=23, minute=59, second=59, microsecond=0)
         
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
         
         events_result = service.events().list(
-            calendarId=calendar_id, timeMin=start_of_day, timeMax=end_of_day, 
-            singleEvents=True, orderBy='startTime'
+            calendarId=calendar_id,
+            timeMin=start_of_day.isoformat(),
+            timeMax=end_of_day.isoformat(),
+            singleEvents=True,
+            orderBy='startTime',
+            timeZone='Asia/Kolkata'
         ).execute()
         
         events = events_result.get('items', [])
         
         if not events:
-            return f"The calendar is completely free on {dt.strftime('%Y-%m-%d')}."
+            return f"The calendar is completely free on {dt.strftime('%A, %B %d, %Y')}."
             
         busy_times = []
         for event in events:
             start = event['start'].get('dateTime', event['start'].get('date'))
             end = event['end'].get('dateTime', event['end'].get('date'))
             summary = event.get('summary', 'Busy')
-            busy_times.append(f"- Blocked from {start} to {end} ({summary})")
+            busy_times.append(f"- {summary}: {start} to {end}")
             
-        return f"Existing events on {dt.strftime('%Y-%m-%d')}:\n" + "\n".join(busy_times)
+        return f"Existing events on {dt.strftime('%A, %B %d, %Y')}:\n" + "\n".join(busy_times)
         
     except Exception as e:
         print(f"❌ CALENDAR ERROR: {e}")
@@ -66,31 +87,26 @@ def book_meeting(date_time_iso: str, name: str = "User") -> str:
     """Creates a 30-minute Google Calendar meeting."""
     try:
         service = get_calendar_service()
-        
-        # Cross-platform / cross-version robust ISO datetime parsing
-        try:
-            start_time = datetime.datetime.fromisoformat(date_time_iso.replace('Z', '+00:00'))
-        except ValueError:
-            clean_str = date_time_iso.split('+')[0]
-            if 'Z' in clean_str:
-                clean_str = clean_str.replace('Z', '')
-            if '.' in clean_str:
-                clean_str = clean_str.split('.')[0]
-            start_time = datetime.datetime.strptime(clean_str, "%Y-%m-%dT%H:%M:%S")
-            
+        start_time = _parse_datetime_ist(date_time_iso)
         end_time = start_time + datetime.timedelta(minutes=30)
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
 
         event = {
-            'summary': f'Tinkr Voice Assistant: {name}',
+            'summary': f'Tinkr Meeting: {name}',
             'description': 'Automated booking created via Tinkr Voice Assistant.',
-            'start': {'dateTime': start_time.isoformat()},
-            'end': {'dateTime': end_time.isoformat()},
+            'start': {
+                'dateTime': start_time.isoformat(),
+                'timeZone': 'Asia/Kolkata',
+            },
+            'end': {
+                'dateTime': end_time.isoformat(),
+                'timeZone': 'Asia/Kolkata',
+            },
         }
 
         event_result = service.events().insert(calendarId=calendar_id, body=event).execute()
-        print(f"✅ REAL CALENDAR BOOKING SUCCESS: {event_result.get('htmlLink')}")
-        return f"Success! Meeting booked on Google Calendar for {name}."
+        print(f"✅ CALENDAR BOOKING SUCCESS: {event_result.get('htmlLink')}")
+        return f"Success! Meeting '{name}' booked for {start_time.strftime('%I:%M %p on %A, %B %d, %Y')} (IST)."
         
     except Exception as e:
         print(f"❌ CALENDAR ERROR: {e}")

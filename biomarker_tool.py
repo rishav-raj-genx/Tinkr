@@ -63,18 +63,35 @@ def analyze_audio_biomarkers(base64_audio: str) -> dict:
         else:
             voice_energy_level = "high"
         
+        # ── Minimum Duration Check ──
+        # At 16kHz, 0.5 seconds = 8000 samples. Short clips give unreliable features.
+        if len(audio_array) < 8000:
+            print(f"⏩ [BIOMARKER] Audio too short ({len(audio_array)} samples), skipping analysis.")
+            return {
+                "alert": False,
+                "predicted_state": "calm",
+                "voice_energy_level": voice_energy_level,
+                "mean_zcr": mean_zcr,
+                "rms_variance": rms_variance,
+                "message": "Audio clip too short for reliable analysis.",
+                "suggestions": []
+            }
+
         # ── Mental State Prediction ──
-        # Based on combination of vocal features
+        # Uses AND logic: multiple features must agree to reduce false positives.
         predicted_state = "calm"
         alert = False
         
-        if mean_zcr > 0.06 or rms_variance > 0.0002:
+        # Stressed: voice must show BOTH high zero-crossing AND amplitude instability
+        if mean_zcr > 0.08 and rms_variance > 0.0002:
             predicted_state = "stressed"
             alert = True
-        elif mean_zcr > 0.05 or mean_centroid > 2000 or mean_centroid < 800:
+        # Anxious: voice must show BOTH elevated ZCR AND high spectral brightness
+        elif mean_zcr > 0.06 and mean_centroid > 2500:
             predicted_state = "anxious"
             alert = True
-        elif voice_energy_level == "low" and mean_zcr < 0.03:
+        # Fatigued: low energy voice with very low ZCR (monotone, flat)
+        elif voice_energy_level == "low" and mean_zcr < 0.02:
             predicted_state = "fatigued"
             alert = True
         

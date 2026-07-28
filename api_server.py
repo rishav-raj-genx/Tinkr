@@ -89,13 +89,11 @@ def handle_chat():
 Your core reasoning engine is Gemma 4.
 The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
-Always check availability first before booking a meeting to prevent double-booking. When booking or checking, format dates strictly to ISO 8601 offset to the user's timezone.
+The user's timezone is Indian Standard Time (IST, UTC+05:30). Always use +05:30 offset in ISO 8601 dates.
+Always check availability first before booking a meeting to prevent double-booking.
 Do NOT use markdown formatting (like asterisks **, hashtags #, etc.). Keep the output as plain conversational text.
-If the user asks for the weather without specifying a location, ask them for their city. Provide a brief overview of current weather and the rest of the day. If specific details are asked, parse the JSON from the tool response.
-If any tool returns an error, you must explicitly state the error out loud to the user.
-
-WELLNESS ROLE: You track the user's mental wellbeing through voice biomarker analysis.
-When the user expresses an emotion, be empathetic and non-judgmental.
+If the user asks for the weather without specifying a location, ask them for their city.
+If any tool returns an error, you MUST explicitly tell the user what went wrong in a friendly way.
 
 {emotion_context}
 """
@@ -192,6 +190,18 @@ tools = [
                 "required": ["title"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tasks",
+            "description": "Lists the user's current pending tasks and to-do items.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
     }
 ]
 
@@ -211,18 +221,29 @@ def handle_chat_stream():
         chat_histories[user_id] = []
         
     current_time = datetime.now().astimezone().isoformat()
+    
+    # Build wellness instruction only when emotion context is present
+    wellness_instruction = ""
+    if emotion_context and emotion_context.strip():
+        wellness_instruction = f"""
+
+IMPORTANT WELLNESS ALERT: The user has CONFIRMED they are experiencing emotional distress. You MUST:
+1. FIRST acknowledge their emotional state warmly and empathetically before anything else.
+2. Offer genuine comfort and support. Speak like a caring friend, not a robot.
+3. Suggest one or two small, actionable things they can do right now to feel better.
+4. Then, if they asked a question, answer it briefly.
+
+{emotion_context}"""
+    
     system_prompt = f"""You are Tinkr, a fast, empathetic voice assistant. Keep all spoken responses extremely concise, conversational, and under 2 sentences unless detailed information is requested.
 Your core reasoning engine is Gemma 4.
 The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
-Always check availability first before booking a meeting to prevent double-booking. When booking or checking, format dates strictly to ISO 8601 offset to the user's timezone.
+The user's timezone is Indian Standard Time (IST, UTC+05:30). Always use +05:30 offset in ISO 8601 dates.
+Always check availability first before booking a meeting to prevent double-booking.
 Do NOT use markdown formatting (like asterisks **, hashtags #, etc.). Keep the output as plain conversational text.
-If the user asks for the weather without specifying a location, ask them for their city. Provide a brief overview of current weather and the rest of the day. If specific details are asked, parse the JSON from the tool response.
-If any tool returns an error, you must explicitly state the error out loud to the user.
-
-WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an emotion, be empathetic and non-judgmental.
-
-{emotion_context}"""
+If the user asks for the weather without specifying a location, ask them for their city.
+If any tool returns an error, you MUST explicitly tell the user what went wrong in a friendly way.{wellness_instruction}"""
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(chat_histories[user_id])
@@ -230,7 +251,7 @@ WELLNESS ROLE: You track the user's mental wellbeing. When the user expresses an
     
     # Intent-Based Tool Bypass
     text_lower = user_text.lower()
-    trigger_words = ["calendar", "schedule", "book", "news", "search", "weather", "task", "todo", "meeting"]
+    trigger_words = ["calendar", "schedule", "book", "news", "search", "weather", "task", "todo", "meeting", "remind", "reminder", "list", "pending"]
     needs_tools = any(word in text_lower for word in trigger_words)
     
     active_tools = tools if needs_tools else None
