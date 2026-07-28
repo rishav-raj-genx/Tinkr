@@ -68,13 +68,13 @@ def analyze_audio_biomarkers(base64_audio: str) -> dict:
         predicted_state = "calm"
         alert = False
         
-        if mean_zcr > 0.04 or rms_variance > 0.0001:
+        if mean_zcr > 0.06 or rms_variance > 0.0002:
             predicted_state = "stressed"
             alert = True
-        elif mean_zcr > 0.03 or mean_centroid > 1500 or mean_centroid < 900:
+        elif mean_zcr > 0.05 or mean_centroid > 2000 or mean_centroid < 800:
             predicted_state = "anxious"
             alert = True
-        elif voice_energy_level == "low" and mean_zcr < 0.05:
+        elif voice_energy_level == "low" and mean_zcr < 0.03:
             predicted_state = "fatigued"
             alert = True
         

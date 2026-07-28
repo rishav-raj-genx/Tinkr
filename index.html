@@ -755,22 +755,11 @@
                                         body: JSON.stringify({ audio_base64: base64Audio })
                                     });
                                     const biomarkerData = await biomarkerRes.json();
-                                    if (biomarkerData.message) {
-                                        emotionContext = biomarkerData.message;
-                                        
-                                        if (biomarkerData.alert) {
-                                            await fetch('http://127.0.0.1:5000/api/save_mental_state', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({
-                                                    user_id: currentUserId,
-                                                    predicted_state: biomarkerData.predicted_state,
-                                                    user_confirmed: false,
-                                                    mean_zcr: biomarkerData.mean_zcr,
-                                                    rms_variance: biomarkerData.rms_variance,
-                                                    voice_energy_level: biomarkerData.voice_energy_level
-                                                })
-                                            });
+                                    if (biomarkerData.alert) {
+                                        pendingBiomarkerData = biomarkerData;
+                                        const isConfirmed = await triggerWellnessPrompt(biomarkerData);
+                                        if (isConfirmed && biomarkerData.message) {
+                                            emotionContext = biomarkerData.message;
                                         }
                                     }
                                 } catch (e) {
@@ -1012,16 +1001,24 @@
         });
 
         // ── Wellness Modal Logic ──
+        let wellnessResolve = null;
         function triggerWellnessPrompt(bioData) {
-            const icons = { stressed: 'warning', anxious: 'help_outline', fatigued: 'battery_alert', calm: 'self_improvement', unknown: 'question_mark' };
-            UI.wellnessIcon.innerText = icons[bioData.predicted_state] || 'psychology';
-            UI.wellnessTitle.innerText = `${bioData.predicted_state.charAt(0).toUpperCase() + bioData.predicted_state.slice(1)} Detected`;
-            UI.wellnessDesc.innerText = `Voice analysis suggests you might be feeling ${bioData.predicted_state}. Is this accurate?`;
-            UI.wellnessModal.classList.add('show');
+            return new Promise((resolve) => {
+                wellnessResolve = resolve;
+                const icons = { stressed: 'warning', anxious: 'help_outline', fatigued: 'battery_alert', calm: 'self_improvement', unknown: 'question_mark' };
+                UI.wellnessIcon.innerText = icons[bioData.predicted_state] || 'psychology';
+                UI.wellnessTitle.innerText = `${bioData.predicted_state.charAt(0).toUpperCase() + bioData.predicted_state.slice(1)} Detected`;
+                UI.wellnessDesc.innerText = `Voice analysis suggests you might be feeling ${bioData.predicted_state}. Is this accurate?`;
+                UI.wellnessModal.classList.add('show');
+            });
         }
 
         async function confirmMentalState(confirmed) {
             UI.wellnessModal.classList.remove('show');
+            if (wellnessResolve) {
+                wellnessResolve(confirmed);
+                wellnessResolve = null;
+            }
             if (!pendingBiomarkerData || !currentUserId) return;
 
             const payload = {
