@@ -22,16 +22,22 @@ client_config = {
 }
 
 # Set up the OAuth flow
+SCOPES = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.compose'
+]
+
 flow = Flow.from_client_config(
     client_config,
-    scopes=['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'],
+    scopes=SCOPES,
     redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback")
 )
 
 @app.route('/')
 def index():
     auth_url, _ = flow.authorization_url(prompt='consent')
-    return f'<h2>AI Calling Assistant</h2><a href="{auth_url}">Click here to Authorize Google Calendar</a>'
+    return f'<h2>AI Calling Assistant</h2><a href="{auth_url}">Click here to Authorize Google Calendar and Gmail</a>'
 
 @app.route('/auth/callback')
 def callback():

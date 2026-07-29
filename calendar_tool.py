@@ -35,9 +35,8 @@ def _parse_datetime_ist(date_str: str) -> datetime.datetime:
         # Convert to IST if it has timezone info
         if dt.tzinfo is not None:
             dt = dt.astimezone(IST)
-        else:
-            dt = dt.replace(tzinfo=IST)
-        return dt
+        # Strip tzinfo so we return a naive datetime
+        return dt.replace(tzinfo=None)
     except ValueError:
         pass
 
@@ -66,8 +65,12 @@ def check_availability(date_iso: str) -> str:
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
         
         # Fetch the calendar's timezone
-        cal_meta = service.calendars().get(calendarId=calendar_id).execute()
-        cal_tz = cal_meta.get('timeZone', 'UTC')
+        cal_tz = 'UTC'
+        try:
+            cal_meta = service.calendars().get(calendarId=calendar_id).execute()
+            cal_tz = cal_meta.get('timeZone', 'UTC')
+        except Exception:
+            pass
         
         events_result = service.events().list(
             calendarId=calendar_id,
@@ -105,8 +108,12 @@ def book_meeting(date_time_iso: str, name: str = "User") -> str:
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
 
         # Fetch the calendar's native timezone so the event visually aligns
-        cal_meta = service.calendars().get(calendarId=calendar_id).execute()
-        cal_tz = cal_meta.get('timeZone', 'UTC')
+        cal_tz = 'UTC'
+        try:
+            cal_meta = service.calendars().get(calendarId=calendar_id).execute()
+            cal_tz = cal_meta.get('timeZone', 'UTC')
+        except Exception:
+            pass
 
         event = {
             'summary': f'Meeting: {name}',
@@ -138,8 +145,12 @@ def set_reminder(title: str, date_time_iso: str) -> str:
         calendar_id = os.getenv("HOST_CALENDAR_ID", "primary")
 
         # Fetch the calendar's native timezone
-        cal_meta = service.calendars().get(calendarId=calendar_id).execute()
-        cal_tz = cal_meta.get('timeZone', 'UTC')
+        cal_tz = 'UTC'
+        try:
+            cal_meta = service.calendars().get(calendarId=calendar_id).execute()
+            cal_tz = cal_meta.get('timeZone', 'UTC')
+        except Exception:
+            pass
 
         event = {
             'summary': f'Reminder: {title}',

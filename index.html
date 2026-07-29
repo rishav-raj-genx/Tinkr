@@ -517,6 +517,81 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
+        /* ── Fallback Input ── */
+        .text-fallback-container {
+            position: absolute;
+            bottom: 48vh; /* Just above transcript */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            z-index: 10;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .toggle-fallback-btn {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 0.5rem 1rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .toggle-fallback-btn:hover {
+            background: var(--surface-elevated);
+            color: var(--text-main);
+        }
+
+        .fallback-input-wrapper {
+            display: flex;
+            width: 90%;
+            gap: 0.5rem;
+            animation: fade-in 0.3s ease;
+        }
+
+        .fallback-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .fallback-input:focus {
+            border-color: var(--text-main);
+        }
+
+        .send-fallback-btn {
+            background: var(--text-main);
+            color: var(--bg-color);
+            border: none;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+
+        .send-fallback-btn:hover {
+            transform: scale(1.05);
+            opacity: 0.9;
+        }
     </style>
 </head>
 
@@ -568,6 +643,18 @@
             </button>
         </div>
 
+        <div class="text-fallback-container" id="fallbackContainer">
+            <button class="toggle-fallback-btn" id="toggleFallbackBtn" title="Toggle Text Override">
+                <span class="material-icons-round">keyboard</span> Text/Context Override
+            </button>
+            <div class="fallback-input-wrapper" id="fallbackInputWrapper" style="display: none;">
+                <input type="text" id="fallbackInput" class="fallback-input" placeholder="Type instructions, recipient emails, or context here..." />
+                <button id="sendFallbackBtn" class="send-fallback-btn">
+                    <span class="material-icons-round">send</span>
+                </button>
+            </div>
+        </div>
+
         <div class="transcript-wrapper">
             <div class="transcript-stream" id="transcriptStream">
                 <!-- Text appears here naturally -->
@@ -617,6 +704,10 @@
             controlsContainer: document.getElementById('controlsContainer'),
             playPauseBtn: document.getElementById('playPauseBtn'),
             playPauseIcon: document.getElementById('playPauseIcon'),
+            toggleFallbackBtn: document.getElementById('toggleFallbackBtn'),
+            fallbackInputWrapper: document.getElementById('fallbackInputWrapper'),
+            fallbackInput: document.getElementById('fallbackInput'),
+            sendFallbackBtn: document.getElementById('sendFallbackBtn'),
             sidebar: document.getElementById('sidebar'),
             historyBtn: document.getElementById('historyBtn'),
             closeSidebar: document.getElementById('closeSidebar'),
@@ -649,7 +740,36 @@
         let pendingBiomarkerData = null;
         let micAnalyser = null;
 
-        // ── Navigation ──
+        // ── Navigation & Fallback Listeners ──
+        UI.toggleFallbackBtn.addEventListener('click', () => {
+            if (UI.fallbackInputWrapper.style.display === 'none') {
+                UI.fallbackInputWrapper.style.display = 'flex';
+                UI.fallbackInput.focus();
+            } else {
+                UI.fallbackInputWrapper.style.display = 'none';
+            }
+        });
+
+        UI.sendFallbackBtn.addEventListener('click', () => {
+            let fallbackText = UI.fallbackInput.value.trim();
+            if (fallbackText) {
+                let combinedText = fallbackText;
+                if (window.currentTranscript && window.currentTranscript.trim()) {
+                    combinedText = window.currentTranscript.trim() + " (Context: " + fallbackText + ")";
+                    window.currentTranscript = "";
+                }
+                processText(combinedText, "");
+                UI.fallbackInput.value = "";
+                UI.fallbackInputWrapper.style.display = 'none';
+            }
+        });
+
+        UI.fallbackInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                UI.sendFallbackBtn.click();
+            }
+        });
+
         UI.historyBtn.addEventListener('click', () => {
             UI.sidebar.classList.add('open');
             if (currentUserId) loadHistory();
@@ -770,10 +890,23 @@
                                 }
                             }
 
-                            if (window.currentTranscript.trim()) {
-                                processText(window.currentTranscript.trim(), emotionContext);
+                            let currentTx = window.currentTranscript ? window.currentTranscript.trim() : "";
+                            let fallbackTx = UI.fallbackInput.value.trim();
+                            let combinedText = "";
+
+                            if (currentTx && fallbackTx) {
+                                combinedText = currentTx + " (Context: " + fallbackTx + ")";
+                            } else if (currentTx) {
+                                combinedText = currentTx;
+                            } else if (fallbackTx) {
+                                combinedText = fallbackTx;
+                            }
+
+                            if (combinedText) {
+                                processText(combinedText, emotionContext);
                                 window.currentTranscript = "";
                             }
+                            
                             isCallActive = false;
                             resetCallBtnUI();
                             if (mediaStream) {

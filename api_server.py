@@ -14,11 +14,69 @@ from sql_tool import get_database_schema, execute_sql_query
 from web_tool import search_web, get_news
 from weather_tool import get_weather
 
+# Gmail API imports
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+import base64
+from email.message import EmailMessage
+
 app = Flask(__name__)
 CORS(app)
 
 from dotenv import load_dotenv
 load_dotenv()
+
+def get_gmail_service():
+    if not os.path.exists('token.json'):
+        raise Exception("Missing token.json.")
+    creds = Credentials.from_authorized_user_file('token.json')
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+    return build('gmail', 'v1', credentials=creds)
+
+def check_unread_emails(timeframe="today"):
+    try:
+        service = get_gmail_service()
+        query = "is:unread"
+        if timeframe == "today":
+            query += " newer_than:1d"
+        results = service.users().messages().list(userId='me', q=query, maxResults=5).execute()
+        messages = results.get('messages', [])
+        if not messages:
+            return "You have no unread emails."
+        
+        email_summaries = []
+        for msg in messages:
+            msg_data = service.users().messages().get(userId='me', id=msg['id'], format='metadata', metadataHeaders=['From', 'Subject']).execute()
+            headers = msg_data.get('payload', {}).get('headers', [])
+            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+            sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
+            snippet = msg_data.get('snippet', '')
+            email_summaries.append(f"From: {sender}\nSubject: {subject}\nSnippet: {snippet}")
+        
+        return "Unread emails:\n" + "\n\n".join(email_summaries)
+    except Exception as e:
+        return f"Failed to check emails: {str(e)}"
+
+def draft_email(recipient_email, subject, body_context):
+    try:
+        service = get_gmail_service()
+        message = EmailMessage()
+        message.set_content(body_context)
+        message['To'] = recipient_email
+        message['Subject'] = subject
+        
+        encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        create_message = {'message': {'raw': encoded_message}}
+        
+        draft = service.users().drafts().create(userId='me', body=create_message).execute()
+        return f"Draft created successfully. Draft ID: {draft['id']}"
+    except Exception as e:
+        return f"Failed to draft email: {str(e)}"
+
 
 # In-memory storage for Tinkr hackathon (NO Firebase)
 user_mental_states = {} # user_id -> list of state_data dicts
@@ -85,7 +143,7 @@ def handle_chat():
         
     current_time = datetime.now().astimezone().isoformat()
         
-    system_prompt = f"""You are a professional, empathetic AI assistant named Tinkr.
+    system_prompt = f"""You are Tinkr, an autonomous AI companion. You have access to tools for checking Google Calendar, searching the web, checking unread emails, and drafting emails. If the user provides explicit email addresses or names via the text fallback box, prioritize that structured data for email operations.
 Your core reasoning engine is Gemma 4.
 The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
@@ -218,6 +276,36 @@ tools = [
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_unread_emails",
+            "description": "Checks the user's Gmail for unread emails.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "timeframe": {"type": "string", "description": "Timeframe to check for unread emails (e.g., 'today')"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_email",
+            "description": "Drafts an email using the Gmail API.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipient_email": {"type": "string", "description": "The email address of the recipient"},
+                    "subject": {"type": "string", "description": "The subject of the email"},
+                    "body_context": {"type": "string", "description": "The body content of the email"}
+                },
+                "required": ["recipient_email", "subject", "body_context"]
+            }
+        }
     }
 ]
 
@@ -251,8 +339,8 @@ IMPORTANT WELLNESS ALERT: The user has CONFIRMED they are experiencing emotional
 
 {emotion_context}"""
     
-    system_prompt = f"""You are Tinkr, a fast, empathetic voice assistant. Keep all spoken responses extremely concise, conversational, and under 2 sentences unless detailed information is requested.
-Your core reasoning engine is Gemma 4.
+    system_prompt = f"""You are Tinkr, an autonomous AI companion. You have access to tools for checking Google Calendar, searching the web, checking unread emails, and drafting emails. If the user provides explicit email addresses or names via the text fallback box, prioritize that structured data for email operations.
+Your core reasoning engine is Gemma 4. Keep all spoken responses extremely concise, conversational, and under 2 sentences unless detailed information is requested.
 The user's name/ID is "{user_id}".
 The current date and time is: {current_time}.
 The user's timezone is Indian Standard Time (IST, UTC+05:30). Always use +05:30 offset in ISO 8601 dates.
@@ -268,7 +356,7 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
     
     # Intent-Based Tool Bypass
     text_lower = user_text.lower()
-    trigger_words = ["calendar", "schedule", "book", "news", "search", "weather", "task", "todo", "meeting", "remind", "reminder", "list", "pending"]
+    trigger_words = ["calendar", "schedule", "book", "news", "search", "weather", "task", "todo", "meeting", "remind", "reminder", "list", "pending", "email", "mail", "draft", "inbox"]
     needs_tools = any(word in text_lower for word in trigger_words)
     
     active_tools = tools if needs_tools else None
@@ -306,6 +394,10 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
                                 function_response = str(add_task(title=function_args.get("title"), notes=function_args.get("notes", "")))
                             elif function_name == "list_tasks":
                                 function_response = str(list_tasks())
+                            elif function_name == "check_unread_emails":
+                                function_response = str(check_unread_emails(timeframe=function_args.get("timeframe", "today")))
+                            elif function_name == "draft_email":
+                                function_response = str(draft_email(recipient_email=function_args.get("recipient_email"), subject=function_args.get("subject"), body_context=function_args.get("body_context")))
                             else:
                                 function_response = f"Error: Unknown tool '{function_name}'. Please tell the user this action is not supported."
                         except Exception as ex:
