@@ -281,11 +281,11 @@
 
         /* ── Scrollable Transcript ── */
         .transcript-wrapper {
-            position: absolute;
-            bottom: 2rem;
+            flex: 1;
             width: 100%;
             max-width: 800px;
-            height: 45vh; /* Half the screen */
+            margin-top: 2rem;
+            margin-bottom: 2rem;
             padding: 1rem 2rem;
             display: flex;
             flex-direction: column;
@@ -312,15 +312,16 @@
 
         .controls-container {
             display: flex;
-            gap: 1.5rem;
+            flex-direction: column;
+            gap: 0.75rem;
             align-items: center;
-            margin-top: 2rem;
+            margin-top: 1rem;
             z-index: 10;
         }
 
         .play-pause-btn {
-            width: 60px;
-            height: 60px;
+            width: 44px;
+            height: 44px;
             border-radius: 50%;
             border: 1px solid var(--border);
             background: var(--surface);
@@ -520,8 +521,6 @@
 
         /* ── Fallback Input ── */
         .text-fallback-container {
-            position: absolute;
-            bottom: 48vh; /* Just above transcript */
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -601,7 +600,7 @@
     <div id="setupModal" class="setup-modal">
         <div class="setup-card">
             <div class="setup-logo">
-                <span class="material-icons-round">graphic_eq</span>
+            <span class="material-icons-round">smart_toy</span>
             </div>
             <h2>Tinkr</h2>
             <p>Your intelligent, empathetic voice assistant.</p>
@@ -615,7 +614,7 @@
     <!-- ── Header ── -->
     <header class="header">
         <div class="brand">
-            <span class="material-icons-round">graphic_eq</span>
+            <span class="material-icons-round">smart_toy</span>
             Tinkr
         </div>
         <button class="icon-btn" id="historyBtn" title="Mental State History">
@@ -637,12 +636,6 @@
             </button>
         </div>
         
-        <div class="controls-container" id="controlsContainer" style="opacity: 0; pointer-events: none; transition: opacity 0.3s;">
-            <button class="play-pause-btn" id="playPauseBtn" title="Play / Pause">
-                <span class="material-icons-round" id="playPauseIcon">pause</span>
-            </button>
-        </div>
-
         <div class="text-fallback-container" id="fallbackContainer">
             <button class="toggle-fallback-btn" id="toggleFallbackBtn" title="Toggle Text Override">
                 <span class="material-icons-round">keyboard</span> Text/Context Override
@@ -653,6 +646,12 @@
                     <span class="material-icons-round">send</span>
                 </button>
             </div>
+        </div>
+
+        <div class="controls-container" id="controlsContainer" style="opacity: 0; pointer-events: none; transition: opacity 0.3s;">
+            <button class="play-pause-btn" id="playPauseBtn" title="Play / Pause">
+                <span class="material-icons-round" id="playPauseIcon">pause</span>
+            </button>
         </div>
 
         <div class="transcript-wrapper">
@@ -751,6 +750,7 @@
         });
 
         UI.sendFallbackBtn.addEventListener('click', () => {
+            if (!currentUserId) return alert("Please start a session first.");
             let fallbackText = UI.fallbackInput.value.trim();
             if (fallbackText) {
                 let combinedText = fallbackText;
@@ -791,6 +791,7 @@
 
         // ── Voice Interaction ──
         UI.callBtn.addEventListener('click', async () => {
+            if (!currentUserId) return alert("Please start a session first.");
             isCallActive = !isCallActive;
 
             if (isCallActive) {
@@ -869,11 +870,13 @@
                                 let base64Audio = btoa(binary);
 
                                 try {
+                                    updateStatus('Analyzing voice...');
                                     const biomarkerRes = await fetch('http://127.0.0.1:5000/api/analyze_audio', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ audio_base64: base64Audio })
+                                        body: JSON.stringify({ audio_base64: base64Audio, user_id: currentUserId })
                                     });
+                                    if (!biomarkerRes.ok) throw new Error(`Server returned ${biomarkerRes.status}`);
                                     const biomarkerData = await biomarkerRes.json();
                                     if (biomarkerData.alert) {
                                         pendingBiomarkerData = biomarkerData;
@@ -886,7 +889,7 @@
                                         }
                                     }
                                 } catch (e) {
-                                    console.error("Biomarker error:", e);
+                                    console.error("Biomarker error (non-fatal):", e);
                                 }
                             }
 
@@ -905,6 +908,7 @@
                             if (combinedText) {
                                 processText(combinedText, emotionContext);
                                 window.currentTranscript = "";
+                                UI.fallbackInput.value = "";
                             }
                             
                             isCallActive = false;
@@ -990,7 +994,7 @@
                                         setStreamText(fullResponse, "ai-text");
                                         
                                         // Check for sentence boundary for TTS chunking
-                                        if (/[.!?]\\s*$/.test(sentenceBuffer)) {
+                                        if (/[.!?]\s*$/.test(sentenceBuffer)) {
                                             queueTTS(sentenceBuffer.trim());
                                             sentenceBuffer = "";
                                         }
@@ -1138,43 +1142,63 @@
 
         // ── Wellness Modal Logic ──
         let wellnessResolve = null;
+        let wellnessTimeout = null;
+        const WELLNESS_TIMEOUT_MS = 15000; // Auto-dismiss after 15 seconds
+
         function triggerWellnessPrompt(bioData) {
             return new Promise((resolve) => {
+                // Clear any stale timeout
+                if (wellnessTimeout) { clearTimeout(wellnessTimeout); wellnessTimeout = null; }
                 wellnessResolve = resolve;
+
                 const icons = { stressed: 'warning', anxious: 'help_outline', fatigued: 'battery_alert', calm: 'self_improvement', unknown: 'question_mark' };
                 UI.wellnessIcon.innerText = icons[bioData.predicted_state] || 'psychology';
                 UI.wellnessTitle.innerText = `${bioData.predicted_state.charAt(0).toUpperCase() + bioData.predicted_state.slice(1)} Detected`;
                 UI.wellnessDesc.innerText = `Voice analysis suggests you might be feeling ${bioData.predicted_state}. Is this accurate?`;
                 UI.wellnessModal.classList.add('show');
+
+                // Auto-dismiss as "skip" after timeout so the pipeline doesn't hang
+                wellnessTimeout = setTimeout(() => {
+                    if (wellnessResolve) {
+                        console.log('[WELLNESS] Auto-dismissed after timeout');
+                        confirmMentalState(false);
+                    }
+                }, WELLNESS_TIMEOUT_MS);
             });
         }
 
         async function confirmMentalState(confirmed) {
+            // Clear auto-dismiss timer
+            if (wellnessTimeout) { clearTimeout(wellnessTimeout); wellnessTimeout = null; }
+
             UI.wellnessModal.classList.remove('show');
             if (wellnessResolve) {
                 wellnessResolve(confirmed);
                 wellnessResolve = null;
             }
-            if (!pendingBiomarkerData || !currentUserId) return;
+            if (!pendingBiomarkerData || !currentUserId) { pendingBiomarkerData = null; return; }
 
-            const payload = {
-                user_id: currentUserId,
-                predicted_state: pendingBiomarkerData.predicted_state,
-                user_confirmed: confirmed,
-                mean_zcr: pendingBiomarkerData.mean_zcr,
-                rms_variance: pendingBiomarkerData.rms_variance,
-                voice_energy_level: pendingBiomarkerData.voice_energy_level,
-                suggestions: pendingBiomarkerData.suggestions || [],
-            };
+            // Only save to history when user explicitly confirms
+            if (confirmed) {
+                const payload = {
+                    user_id: currentUserId,
+                    predicted_state: pendingBiomarkerData.predicted_state,
+                    user_confirmed: true,
+                    mean_zcr: pendingBiomarkerData.mean_zcr,
+                    rms_variance: pendingBiomarkerData.rms_variance,
+                    voice_energy_level: pendingBiomarkerData.voice_energy_level,
+                    suggestions: pendingBiomarkerData.suggestions || [],
+                };
 
-            try {
-                await fetch('http://127.0.0.1:5000/api/save_mental_state', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-            } catch (err) {
-                console.error("Save Error:", err);
+                try {
+                    await fetch('http://127.0.0.1:5000/api/save_mental_state', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (err) {
+                    console.error("Save Error:", err);
+                }
             }
             pendingBiomarkerData = null;
         }

@@ -1,4 +1,9 @@
+import requests
+import xml.etree.ElementTree as ET
+import urllib.parse
+
 from duckduckgo_search import DDGS
+
 
 def search_web(query: str) -> str:
     """
@@ -19,9 +24,7 @@ def search_web(query: str) -> str:
         print(f" [TOOL ERROR] Web search failed: {e}")
         return f"Error searching the web: {e}"
 
-import requests
-import xml.etree.ElementTree as ET
-import urllib.parse
+
 
 def get_news(query: str) -> str:
     """

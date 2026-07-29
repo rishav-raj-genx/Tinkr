@@ -1,75 +1,49 @@
 # Tinkr
 
-A real-time voice AI assistant powered by Gemma 4. Tinkr captures microphone audio in the browser using the Web Speech API (SpeechRecognition), sends the transcribed text to a Flask backend, streams back reasoning via Server-Sent Events (SSE), and plays back responses using browser Text-to-Speech (TTS). A local Python backend bridges authenticated Google services — Calendar, Tasks, and a SQLite database — so the AI can take real actions on your behalf.
+An autonomous voice AI assistant powered by Gemma 4. Tinkr captures speech through the browser's Web Speech API, streams reasoning via Server-Sent Events, executes real actions on Google Calendar, Gmail, Tasks, and the web, and speaks back using browser TTS — all while monitoring voice biomarkers for emotional wellness.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## Table of Contents
+## Features
 
-1. [Overview](#overview)
-2. [Architecture](#architecture)
-3. [Project Structure](#project-structure)
-4. [Request Flow](#request-flow)
-5. [Prerequisites](#prerequisites)
-6. [Local Setup](#local-setup)
-   - [Step 1: Clone the Repository](#step-1-clone-the-repository)
-   - [Step 2: Create a Virtual Environment](#step-2-create-a-virtual-environment)
-   - [Step 3: Install Dependencies](#step-3-install-dependencies)
-   - [Step 4: Configure Environment Variables](#step-4-configure-environment-variables)
-   - [Step 5: Configure Google Cloud Credentials](#step-5-configure-google-cloud-credentials)
-   - [Step 6: Authorize Google Services](#step-6-authorize-google-services-generate-tokenjson)
-   - [Step 7: Provide the Google AI Studio API Key](#step-7-provide-the-google-ai-studio-api-key)
-7. [Running the Application](#running-the-application)
-8. [API Reference](#api-reference)
-9. [Tool Modules](#tool-modules)
-10. [Environment Variables Reference](#environment-variables-reference)
-11. [Troubleshooting](#troubleshooting)
-
----
-
-## Overview
-
-Tinkr is split into two independent layers that communicate with each other and with external services.
-
-**Frontend (Browser, Port 8000)**
-
-- Captures user speech using the browser's Web Speech API (SpeechRecognition)
-- Sends transcribed text to the backend via REST API (`/api/chat_stream`)
-- Receives real-time streaming responses via Server-Sent Events (SSE)
-- Renders a real-time visual orb and UI status indicators
-- Handles text-to-speech playback of responses via the Web Speech API (SpeechSynthesis)
-
-**Backend (Python / Flask, Port 5000)**
-
-- Protects long-lived OAuth tokens from being exposed in the browser
-- Provides REST endpoints that the Gemma 4 function-calling workflow invokes
-- Performs voice biomarker analysis using Zero Crossing Rate, RMS Energy, and Spectral Centroid to detect user mental state
-- Maintains per-user in-memory chat history and wellness state
+| Feature | Description |
+|---------|-------------|
+| **Voice-First Interface** | Speak naturally; Tinkr transcribes, reasons, and speaks back |
+| **Text Fallback** | Collapsible text input for typed commands, email addresses, and context |
+| **Google Calendar** | Check availability, book meetings, set reminders |
+| **Gmail** | Check unread emails, draft emails, send emails |
+| **Google Tasks** | Add tasks, list pending tasks |
+| **Web Search** | DuckDuckGo instant answers (no API key needed) |
+| **News** | Latest headlines via Google News RSS |
+| **Weather** | Current conditions and forecast via OpenWeatherMap |
+| **Voice Biomarker Analysis** | Per-user adaptive baseline detects stress, anxiety, and fatigue from voice |
+| **Wellness Modal** | Confirms detected emotional state and injects empathetic context into LLM |
+| **Streaming Responses** | Real-time SSE streaming with sentence-by-sentence TTS playback |
+| **Thought Filtering** | Strips `<thought>`/`<think>` tags from Gemma 4 output before display |
 
 ---
 
 ## Architecture
 
 ```
-Browser (index.html)                  Python Backend (api_server.py)
-        |                                          |
-        |-- Web Speech API (STT)                   |
-        |-- POST /api/chat_stream (Text) --------> Gemma 4 (Google AI Studio)
-        |                                          |
-        |<-- Server-Sent Events (SSE) chunks ----- Gemma 4
-        |-- Web Speech API (TTS)                   |
-        |                                          |
-        |                               +----------+----------+-----------+
-        |                               |          |          |           |
-        |                        Google Calendar  DuckDuckGo  SQLite DB  OpenWeatherMap
-        |                        Google Tasks     Search                 Weather API
+Browser (index.html, port 8000)         Python Backend (api_server.py, port 5000)
+        |                                           |
+        |── Web Speech API (STT) ──────────────────>|
+        |── POST /api/chat_stream ─────────────────>|── Gemma 4 (Google AI Studio)
+        |<── SSE text chunks ──────────────────────-|        |
+        |── Web Speech API (TTS)                    |   Tool Dispatch
+        |                                           |        |
+        |                                +----------+---------+---------+----------+
+        |                                |          |         |         |          |
+        |                          Calendar     Gmail     DuckDuckGo  Weather   Tasks
+        |                          (Google)    (Google)   (Web/News)  (OWM)    (Google)
         |
-        |-- POST /api/analyze_audio -----------> biomarker_tool.py (librosa)
-        |-- POST /api/save_mental_state
-        |-- POST /api/get_mental_state_context
+        |── POST /api/analyze_audio ───────────────> biomarker_tool.py (librosa)
+        |── POST /api/save_mental_state             Per-user adaptive baseline
+        |── POST /api/get_mental_state_history      Stress / Anxiety / Fatigue detection
 ```
-
-The browser communicates with the backend via REST APIs and Server-Sent Events (SSE). The Python backend acts as the orchestrator, invoking Gemma 4 and executing tools (calendar, tasks, search, database). This design keeps sensitive OAuth credentials server-side.
 
 ---
 
@@ -77,351 +51,175 @@ The browser communicates with the backend via REST APIs and Server-Sent Events (
 
 ```
 Tinkr/
-|
-|-- index.html              Single-page frontend: WebSocket audio pipeline,
-|                           visualizer orb, tool log UI, and Web Speech TTS.
-|
-|-- api_server.py           Flask REST API. Handles the chat pipeline with
-|                           Gemma 4, tool routing, transcription via Whisper,
-|                           biomarker analysis, and mental state storage.
-|
-|-- auth_server.py          One-time OAuth authorization server. Run this once
-|                           to generate token.json. Do not run in production.
-|
-|-- biomarker_tool.py       Voice biomarker analysis using librosa. Extracts ZCR,
-|                           RMS energy, and spectral centroid to predict mental
-|                           states: calm, stressed, anxious, or fatigued.
-|
-|-- calendar_tool.py        Google Calendar integration.
-|                           Functions: check_availability(), book_meeting().
-|                           Reads from token.json generated by auth_server.py.
-|
-|-- tasks_tool.py           Google Tasks integration.
-|                           Functions: add_task(), list_tasks().
-|                           Shares the same token.json credential file.
-|
-|-- sql_tool.py             SQLite read-only query interface.
-|                           Functions: get_database_schema(), execute_sql_query().
-|                           Only SELECT statements are permitted.
-|
-|-- web_tool.py             DuckDuckGo web search wrapper.
-|                           Function: search_web(query) returns the top 3 results.
-|
-|-- weather_tool.py         OpenWeatherMap integration.
-|                           Function: get_weather(location) returns current weather and 12-hour forecast.
-|
-|-- setup_db.py             Utility script to initialize company_data.db with
-|                           sample data for SQL tool demonstrations.
-|
-|-- requirements.txt        Python package dependencies with pinned versions.
-|-- .env                    Environment variables. Not committed to version control.
-|-- token.json              Google OAuth token generated once. Not committed to git.
-|-- .gitignore
+├── api_server.py         Flask API server — chat streaming, tool routing, biomarker analysis
+├── auth_server.py        One-time OAuth server to generate token.json
+├── index.html            Single-page frontend — voice UI, visualizer, text fallback
+├── biomarker_tool.py     Voice biomarker engine — per-user adaptive baseline calibration
+├── calendar_tool.py      Google Calendar — check availability, book meetings, set reminders
+├── tasks_tool.py         Google Tasks — add and list tasks
+├── web_tool.py           DuckDuckGo search + Google News RSS
+├── weather_tool.py       OpenWeatherMap current weather and forecast
+├── sql_tool.py           Read-only SQLite query interface
+├── setup_db.py           Seeds company_data.db with sample data
+├── requirements.txt      Python dependencies
+├── .env                  Environment variables (not committed)
+├── token.json            OAuth credentials (not committed, generated by auth_server.py)
+├── .gitignore
+└── LICENSE               MIT License
 ```
-
----
-
-## Request Flow
-
-The following describes the complete lifecycle of a single voice interaction from the moment the user speaks to when Tinkr responds.
-
-### Phase 1: Audio Capture and Transcription
-
-1. The user clicks the microphone button in `index.html`.
-2. The browser requests access to the user's microphone via `getUserMedia` for visualizer effects.
-3. The browser's Web Speech API (`SpeechRecognition`) transcribes the user's speech into text.
-
-### Phase 2: Biomarker Analysis (Optional)
-
-4. The frontend can send audio buffers to `POST /api/analyze_audio` on the Python backend.
-5. `biomarker_tool.py` decodes the audio, runs librosa feature extraction, and classifies the user's mental state.
-6. If an anomalous state is detected, the frontend displays an interactive wellness modal. If the user confirms, the emotional context is injected into the LLM prompt.
-
-### Phase 3: Gemma 4 Reasoning and Tool Calls
-
-7. The transcribed text is sent to the backend via `POST /api/chat_stream`.
-8. The backend prompts Gemma 4 using the OpenAI-compatible SDK.
-9. If Gemma 4 decides to invoke a tool, the backend intercepts this and executes the tool locally.
-
-### Phase 4: Tool Execution
-
-10. `api_server.py` routes the tool request:
-    - `check_availability` and `book_meeting` route to `calendar_tool.py` which calls the Google Calendar API
-    - `add_task` and `list_tasks` route to `tasks_tool.py` which calls the Google Tasks API
-    - `search_web` routes to `web_tool.py` which queries DuckDuckGo
-    - `get_schema` and `execute_sql` route to `sql_tool.py`
-    - `get_weather` routes to `weather_tool.py` which queries OpenWeatherMap
-11. The tool result is injected back into the conversation context for Gemma 4 to formulate a final response.
-
-### Phase 5: Response Synthesis and Playback
-
-12. The backend streams the natural-language response back to the frontend via Server-Sent Events (SSE).
-13. The browser receives the text chunks and queues them for playback using the Web Speech API (`SpeechSynthesis`).
-14. The user hears Tinkr's spoken response.
 
 ---
 
 ## Prerequisites
 
-- Python 3.9 or higher
-- Google Chrome (required for microphone access and Web Speech API support over HTTP localhost)
-- A Google Cloud project with the Calendar API and Tasks API enabled
-- A Google AI Studio API key (free tier is sufficient)
-- `pip` or `pip3` available in your terminal
+- **Python 3.9+**
+- **Google Chrome** (required for Web Speech API and microphone access on localhost)
+- **Google Cloud project** with Calendar API, Tasks API, and Gmail API enabled
+- **Google AI Studio API key** (free tier)
+- **OpenWeatherMap API key** (free tier)
+- **Groq API key** (free tier, for Whisper STT)
 
 ---
 
-## Local Setup
+## Setup
 
-### Step 1: Clone the Repository
+### 1. Clone and Install
 
 ```bash
-git clone https://github.com/coder-irwin/tinkr-voice-assistant.git
-cd tinkr-voice-assistant
-```
-
-### Step 2: Create a Virtual Environment
-
-Using a virtual environment prevents dependency conflicts with other Python projects on your system.
-
-**macOS / Linux:**
-```bash
+git clone https://github.com/rishav-raj-genx/Tinkr.git
+cd Tinkr
 python3 -m venv venv
-source venv/bin/activate
-```
-
-**Windows:**
-```powershell
-python -m venv venv
-venv\Scripts\activate
-```
-
-### Step 3: Install Dependencies
-
-**macOS / Linux:**
-```bash
-pip3 install -r requirements.txt
-```
-
-**Windows:**
-```powershell
+source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Key packages installed:
+### 2. Configure Environment Variables
 
-| Package | Purpose |
-|---|---|
-| `flask`, `flask-cors` | REST API server for the Python backend |
-| `google-api-python-client` | Communicates with Google Calendar and Tasks APIs |
-| `google-auth-oauthlib` | Handles the OAuth 2.0 flow to generate `token.json` |
-| `openai` | OpenAI-compatible SDK used to call Gemma 4 on Google AI Studio |
-| `librosa`, `numpy` | Audio feature extraction for biomarker analysis |
-| `duckduckgo-search` | Web search capability |
-| `requests` | HTTP requests for external APIs like OpenWeatherMap |
-| `python-dotenv` | Loads `.env` configuration at startup |
-| `websockets` | WebSocket support library |
-
-### Step 4: Configure Environment Variables
-
-Create a file named `.env` in the project root directory. This file must never be committed to version control.
+Create a `.env` file in the project root:
 
 ```ini
-# Google OAuth 2.0 credentials (obtained from Google Cloud Console)
-GOOGLE_CLIENT_ID=your_google_oauth_client_id_here
-GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret_here
+# Google OAuth 2.0 (from Cloud Console > Credentials)
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
 GOOGLE_REDIRECT_URI=http://localhost:8000/auth/callback
 
-# The Google Calendar and email address to read and write events to
+# Google Calendar & Gmail
 HOST_CALENDAR_ID=your_email@gmail.com
 HOST_EMAIL=your_email@gmail.com
 
-# URL of the running frontend (used for CORS and redirect configuration)
+# Frontend URL (for CORS)
 FRONTEND_URL=http://localhost:8000
 
-# A random secret string used for Flask session signing
-SECRET_KEY=replace_this_with_a_long_random_string
+# Flask session secret
+SECRET_KEY=any_random_string
 
-# Google AI Studio API key used by api_server.py for the Gemma 4 chat pipeline
-API_KEY=your_google_ai_studio_api_key_here
+# LLM — Google AI Studio
+API_KEY=your_google_ai_studio_api_key
+
+# STT — Groq Whisper
+GROQ_API_KEY=your_groq_api_key
+
+# Weather — OpenWeatherMap
+WEATHER_API_KEY=your_openweathermap_api_key
 ```
 
-### Step 5: Configure Google Cloud Credentials
+### 3. Enable Google Cloud APIs
 
-The backend requires OAuth 2.0 credentials to interact with Google Calendar and Tasks on your behalf.
+1. Open [Google Cloud Console](https://console.cloud.google.com/).
+2. Navigate to **APIs & Services > Library**.
+3. Enable **Google Calendar API**, **Google Tasks API**, and **Gmail API**.
 
-**5.1 — Enable the required APIs**
+### 4. Create OAuth 2.0 Credentials
 
-1. Open the [Google Cloud Console](https://console.cloud.google.com/).
-2. Select or create a project.
-3. Navigate to **APIs and Services > Library**.
-4. Search for and enable both **Google Calendar API** and **Google Tasks API**.
+1. Go to **APIs & Services > Credentials** > **Create Credentials** > **OAuth client ID**.
+2. Set type to **Web application**.
+3. Add `http://localhost:8000` to **Authorized JavaScript origins**.
+4. Add `http://localhost:8000/auth/callback` to **Authorized redirect URIs**.
+5. Copy Client ID and Client Secret into `.env`.
 
-**5.2 — Create an OAuth 2.0 client**
+### 5. Add Test User
 
-1. In the Cloud Console, go to **APIs and Services > Credentials**.
-2. Click **Create Credentials** and select **OAuth client ID**.
-3. Set the **Application type** to **Web application**.
-4. Under **Authorized JavaScript origins**, add:
-   ```
-   http://localhost:8000
-   ```
-5. Under **Authorized redirect URIs**, add:
-   ```
-   http://localhost:8000/auth/callback
-   ```
-6. Click **Create**. Copy the **Client ID** and **Client Secret** into your `.env` file as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+1. Go to **APIs & Services > OAuth consent screen**.
+2. Under **Test users**, add the Gmail address that Tinkr should access.
 
-**5.3 — Add a test user to the OAuth consent screen**
+### 6. Generate `token.json`
 
-Because the application is in testing mode, only explicitly added accounts can authorize it.
-
-1. In the Cloud Console, go to **APIs and Services > OAuth consent screen**.
-2. Scroll to the **Test users** section and click **Add Users**.
-3. Enter the Gmail address of the Google account whose calendar Tinkr should access.
-
-### Step 6: Authorize Google Services (Generate token.json)
-
-`token.json` is the long-lived OAuth credential file the backend uses to call Google APIs. You generate it once by running `auth_server.py`. This is a one-time setup step.
-
-**macOS / Linux:**
 ```bash
 python3 auth_server.py
 ```
 
-**Windows:**
-```powershell
-python auth_server.py
-```
+1. Open `http://localhost:8000` in Chrome.
+2. Click **"Click here to Authorize Google Calendar and Gmail"**.
+3. Grant permissions for Calendar, Tasks, and Gmail.
+4. After the success message, press `Ctrl+C` to stop the auth server.
 
-This starts a temporary web server on port 8000. Follow these steps:
-
-1. Open `http://localhost:8000` in your browser.
-2. Click **Click here to Authorize Google Calendar**.
-3. Sign in with the Google account you added as a test user in Step 5.3.
-4. Grant the requested permissions for Calendar Events and Tasks.
-5. When the browser shows the success message, return to the terminal and press `Ctrl+C` to stop `auth_server.py`.
-
-A `token.json` file will now exist in the project root. Do not commit this file. It contains your OAuth refresh token.
-
-### Step 7: Provide the Google AI Studio API Key
-
-The Google AI Studio API key is used by the backend to communicate with the Gemma 4 model.
-
-**How to obtain an API key:**
-
-1. Go to [Google AI Studio](https://aistudio.google.com/apikey).
-2. Sign in with your Google account.
-3. Click **Create API key** and copy the generated key.
-
-**How to use it:**
-
-Add this key to your `.env` file as `API_KEY=your_key_here`.
+A `token.json` file is now saved in the project root. Do not commit this file.
 
 ---
 
 ## Running the Application
 
-The application requires two terminal windows running simultaneously.
+Two terminals are required:
 
-**Terminal 1 — Start the Python API Server:**
-
+**Terminal 1 — API Server:**
 ```bash
-# macOS / Linux
+source venv/bin/activate
 python3 api_server.py
-
-# Windows
-python api_server.py
 ```
 
-Expected output when the server starts:
-
-```
-Tinkr API running on http://127.0.0.1:5000
- * Running on http://127.0.0.1:5000
- * Running on http://[::1]:5000
-```
-
-Keep this terminal open. All tool execution, chat requests, and biomarker analysis go through this server.
-
-**Terminal 2 — Serve the Frontend:**
-
+**Terminal 2 — Frontend Server:**
 ```bash
-# macOS / Linux
 python3 -m http.server 8000
-
-# Windows
-python -m http.server 8000
 ```
 
-Expected output:
+Open **Google Chrome** at `http://localhost:8000`.
 
-```
-Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
-```
-
-**Using the application:**
-
-1. Open **Google Chrome** and navigate to `http://localhost:8000`.
-2. Enter your Name or ID in the prompt and click **Start Session**.
-3. Click the microphone button and speak naturally. Example: *"Tinkr, check if my calendar is free tomorrow afternoon, and if so, book a meeting at 3 PM."*
-4. Tinkr will check your calendar, determine availability, and create the meeting through voice.
-
-Always access the frontend using `http://localhost:8000` and not `http://127.0.0.1:8000`. Chrome enforces secure context rules that allow microphone access on the `localhost` hostname but may restrict it on other origins without HTTPS.
+> **Important:** Always use `localhost`, not `127.0.0.1`. Chrome requires the `localhost` hostname for microphone access over HTTP.
 
 ---
 
 ## API Reference
 
-All endpoints are served by `api_server.py` on port 5000. All requests and responses use JSON unless otherwise noted.
+All endpoints are served on port 5000. Requests and responses use JSON.
 
-### POST /api/transcribe
+### Core
 
-Transcribes an audio file to text using the Whisper model via the OpenAI-compatible SDK.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/chat_stream` | Primary endpoint. Streams LLM response via SSE with tool-call support |
+| `POST` | `/api/transcribe` | Transcribes audio file (WebM) to text via Groq Whisper |
 
-**Request:** `multipart/form-data` with an `audio` file field in WebM format.
+### Biomarker & Wellness
 
-**Response:**
-```json
-{
-  "success": true,
-  "text": "Transcribed text content"
-}
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/analyze_audio` | Analyzes PCM audio for voice biomarkers (stress/anxiety/fatigue) |
+| `POST` | `/api/save_mental_state` | Saves a user-confirmed mental state record |
+| `POST` | `/api/get_mental_state_history` | Returns recent mental state logs for a user |
 
----
-
-### POST /api/chat
-
-The primary reasoning endpoint. Sends a text message to the Gemma 4 model with tool-use enabled. The model may invoke one or more tools before returning a final natural-language response. Chat history is maintained in memory per `user_id`.
+### `/api/chat_stream`
 
 **Request:**
 ```json
 {
   "text": "What meetings do I have tomorrow?",
-  "user_id": "user123",
-  "emotion_context": "Optional emotional context string from biomarker analysis"
+  "user_id": "eren",
+  "emotion_context": ""
 }
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "text": "You have a standup at 10 AM and a design review at 2 PM tomorrow."
-}
+**Response:** Server-Sent Events stream. Each event:
+```
+data: {"text": "You have a standup at 10 AM..."}
 ```
 
----
-
-### POST /api/analyze_audio
-
-Analyzes raw PCM audio for voice biomarkers to predict the user's mental state.
+### `/api/analyze_audio`
 
 **Request:**
 ```json
 {
-  "audio_base64": "base64_encoded_pcm_audio_data"
+  "audio_base64": "base64_encoded_16khz_int16_pcm",
+  "user_id": "eren"
 }
 ```
 
@@ -431,201 +229,102 @@ Analyzes raw PCM audio for voice biomarkers to predict the user's mental state.
   "alert": true,
   "predicted_state": "stressed",
   "voice_energy_level": "high",
-  "mean_zcr": 0.0912,
-  "rms_variance": 0.000312,
-  "message": "System prompt injection string describing the detected state",
+  "mean_zcr": 0.091,
+  "rms_variance": 0.00031,
+  "message": "[SYSTEM EVENT: Voice biomarker analysis detected stressed...]",
   "suggestions": ["Try deep breathing: inhale 4 seconds, hold 4, exhale 6"]
 }
 ```
 
 ---
 
-### POST /api/save_mental_state
+## Voice Biomarker Engine
 
-Saves a mental state record for a user to in-memory storage. Records are stored newest-first and capped automatically by the history retrieval limit.
+The biomarker system uses **per-user adaptive baseline calibration** rather than fixed thresholds, making it robust across different microphones, environments, and speaking styles.
 
-**Request:**
-```json
-{
-  "user_id": "user123",
-  "predicted_state": "stressed",
-  "user_confirmed": true,
-  "mean_zcr": 0.09,
-  "rms_variance": 0.0003,
-  "voice_energy_level": "high",
-  "suggestions": []
-}
-```
+### How It Works
 
----
+**Phase 1 — Calibration (first 3 voice inputs):**  
+The system records the user's normal voice characteristics and computes an average baseline.
 
-### POST /api/get_mental_state_history
+**Phase 2 — Deviation Detection (all subsequent inputs):**  
+Each new voice input is compared against the user's personal baseline. Only triggers when features deviate **1.8x above the baseline average**.
 
-Returns recent mental state records for a given user.
+### Features Extracted (via librosa)
 
-**Request:**
-```json
-{
-  "user_id": "user123",
-  "limit": 10
-}
-```
+| Feature | What It Measures | Stress Indicator |
+|---------|-----------------|------------------|
+| **Zero Crossing Rate** | Signal crossings per frame | Breathiness, vocal tension |
+| **RMS Energy Variance** | Micro-tremors in amplitude | Agitation, vocal instability |
+| **Spectral Centroid** | Voice brightness | Tension, elevated pitch |
+| **Pitch (F0) Stability** | Fundamental frequency jitter | Anxiety, nervousness |
 
----
+### Classification Rules
 
-### POST /api/get_mental_state_context
+| Condition | Predicted State |
+|-----------|----------------|
+| ≥2 features elevated + (ZCR or RMS variance elevated) | **Stressed** |
+| Pitch instability elevated + ≥1 other feature elevated | **Anxious** |
+| Low voice energy + ZCR below 50% of baseline | **Fatigued** |
+| None of the above | **Calm** |
 
-Returns a formatted text summary of recent mental state history suitable for injection into an LLM system prompt.
+### Wellness Flow
 
-**Request:**
-```json
-{ "user_id": "user123" }
-```
-
----
-
-### POST /api/check_availability
-
-Checks the Google Calendar for existing events on a given date.
-
-**Request:**
-```json
-{ "date": "2026-07-28T00:00:00+05:30" }
-```
-
----
-
-### POST /api/book_meeting
-
-Creates a 30-minute meeting on the Google Calendar.
-
-**Request:**
-```json
-{
-  "date_time": "2026-07-28T15:00:00+05:30",
-  "guest_email": "guest@example.com"
-}
-```
-
----
-
-### POST /api/add_task
-
-Adds a task to the Google Tasks primary list.
-
-**Request:**
-```json
-{
-  "title": "Review the project proposal",
-  "notes": "Due by end of week"
-}
-```
-
----
-
-### POST /api/list_tasks
-
-Returns the top 10 pending tasks from the Google Tasks primary list.
-
-**Request:** No body required.
-
----
-
-### POST /api/get_schema
-
-Returns the schema of the local SQLite database (`company_data.db`) as a JSON object mapping table names to column definitions.
-
----
-
-### POST /api/execute_sql
-
-Executes a read-only SELECT query against the local SQLite database and returns the rows as a JSON array.
-
-**Request:**
-```json
-{ "query": "SELECT * FROM employees WHERE department = 'Engineering'" }
-```
-
-Only SELECT statements are accepted. Any other statement type is rejected with an error.
+1. Biomarker analysis runs automatically after each voice recording.
+2. If an anomaly is detected, a **wellness modal** appears asking the user to confirm.
+3. If confirmed, empathetic context is injected into the LLM system prompt.
+4. Tinkr acknowledges the user's emotional state before answering their question.
+5. The modal **auto-dismisses after 15 seconds** if the user doesn't respond.
+6. Only **confirmed** states are saved to the wellness history.
 
 ---
 
 ## Tool Modules
 
-Each tool module is an independent Python file that can be imported and tested in isolation from the rest of the application.
+| Module | Tools | Auth |
+|--------|-------|------|
+| `calendar_tool.py` | `check_availability`, `book_meeting`, `set_reminder` | OAuth (token.json) |
+| `tasks_tool.py` | `add_task`, `list_tasks` | OAuth (token.json) |
+| `web_tool.py` | `search_web`, `get_news` | None |
+| `weather_tool.py` | `get_weather` | API key |
+| `sql_tool.py` | `get_database_schema`, `execute_sql_query` | None |
+| `biomarker_tool.py` | `analyze_audio_biomarkers` | None |
 
-### biomarker_tool.py
-
-Analyzes voice characteristics to estimate mental state. Uses librosa to extract three acoustic features from 16 kHz PCM audio:
-
-- **Zero Crossing Rate (ZCR):** Measures how frequently the audio signal crosses zero. Higher values indicate breathiness or vocal tension.
-- **RMS Energy Variance:** Measures micro-tremors in amplitude. High variance suggests agitation or stress.
-- **Spectral Centroid:** Measures the brightness of the voice. Higher values correlate with tense or elevated emotional states.
-
-Classification thresholds applied in order:
-
-| Condition | Predicted State |
-|---|---|
-| ZCR > 0.08 and RMS variance > 0.0002 | Stressed |
-| ZCR > 0.06 and Centroid > 2500 Hz | Anxious |
-| ZCR > 0.05 or RMS variance > 0.0001 | Stressed |
-| Voice energy low and ZCR < 0.03 | Fatigued |
-| None of the above | Calm |
-
-### calendar_tool.py
-
-Reads `token.json` at runtime to authenticate with Google Calendar. The `HOST_CALENDAR_ID` value from `.env` determines which calendar is queried and written to. Both `check_availability` and `book_meeting` use cross-version compatible ISO 8601 datetime parsing to support Python 3.9 and above.
-
-### tasks_tool.py
-
-Uses the same `token.json` credential to interact with Google Tasks. `add_task` inserts into the default task list. `list_tasks` returns up to 10 pending tasks.
-
-### web_tool.py
-
-Wraps the `duckduckgo-search` library. Performs a text search and returns the top 3 results formatted as a numbered list of titles and snippets. No API key is required.
-
-### weather_tool.py
-
-Fetches the current weather and a 12-hour forecast for a given location using the OpenWeatherMap API. Requires `WEATHER_API_KEY` to be set in `.env`.
-
-### sql_tool.py
-
-Provides a read-only SQL interface to `company_data.db`. The `get_database_schema` function returns table and column definitions so the language model can construct valid queries autonomously without prior knowledge of the schema. Only SELECT statements are allowed to execute.
+Gmail tools (`check_unread_emails`, `draft_email`, `send_email`) are defined directly in `api_server.py` and use the same OAuth token.
 
 ---
 
-## Environment Variables Reference
+## Environment Variables
 
 | Variable | Required | Description |
-|---|---|---|
-| `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 Client ID from Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 Client Secret from Google Cloud Console |
-| `GOOGLE_REDIRECT_URI` | Yes | OAuth redirect URI. Must match exactly what is set in Cloud Console |
-| `HOST_CALENDAR_ID` | Yes | Gmail address of the calendar to read from and write to |
-| `HOST_EMAIL` | Yes | Gmail address of the calendar owner |
-| `FRONTEND_URL` | Yes | Base URL of the frontend. Used for CORS headers |
-| `SECRET_KEY` | Yes | Random secret string for Flask session cookie signing |
-| `API_KEY` | Yes | Google AI Studio API key used by the backend to call Gemma 4 |
-| `WEATHER_API_KEY` | Yes | OpenWeatherMap API key for fetching weather and forecasts |
+|----------|----------|-------------|
+| `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 Client ID |
+| `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 Client Secret |
+| `GOOGLE_REDIRECT_URI` | Yes | OAuth redirect (must match Cloud Console) |
+| `HOST_CALENDAR_ID` | Yes | Gmail address for calendar operations |
+| `HOST_EMAIL` | Yes | Gmail address of the account |
+| `FRONTEND_URL` | Yes | Frontend URL for CORS |
+| `SECRET_KEY` | Yes | Flask session secret |
+| `API_KEY` | Yes | Google AI Studio API key (Gemma 4) |
+| `GROQ_API_KEY` | Yes | Groq API key (Whisper STT) |
+| `WEATHER_API_KEY` | Yes | OpenWeatherMap API key |
 
 ---
 
 ## Troubleshooting
 
-**Microphone access is blocked in the browser.**
-Always open the application using `http://localhost:8000`, not `http://127.0.0.1:8000`. Chrome enforces secure context rules that allow microphone access on the `localhost` hostname. Using the IP address may trigger permission restrictions.
+| Problem | Solution |
+|---------|----------|
+| Microphone blocked in browser | Use `http://localhost:8000`, not `http://127.0.0.1:8000` |
+| `token.json` not found | Run `python3 auth_server.py` and complete the OAuth flow |
+| Calendar returns "Failed to check availability" | Verify `HOST_CALENDAR_ID` matches the authorized Gmail. Ensure Calendar + Tasks + Gmail APIs are enabled |
+| LLM connection fails | Verify `API_KEY` is valid at [Google AI Studio](https://aistudio.google.com/apikey) |
+| `pip install` fails on `librosa` | macOS: `brew install portaudio` first. Linux: `sudo apt-get install portaudio19-dev` |
+| Token refresh fails | Delete `token.json` and re-run `python3 auth_server.py` |
+| Biomarker always shows "Calibrating" | The first 3 voice inputs calibrate the baseline. This is expected |
 
-**`token.json` not found error from the backend.**
-Run `auth_server.py` and complete the Google OAuth authorization flow before starting `api_server.py`. The file must exist in the project root.
+---
 
-**Calendar tool returns "Failed to check availability".**
-Verify that the Google account authorized via `auth_server.py` matches the email set in `HOST_CALENDAR_ID`. Also confirm that both the Calendar API and Tasks API are enabled in your Google Cloud project.
+## License
 
-**Connecting with the Google AI Studio API key fails.**
-Verify the key is valid at [Google AI Studio](https://aistudio.google.com/apikey). Ensure there are no leading or trailing spaces when pasting.
-
-**`pip install -r requirements.txt` fails on `librosa` or `PyAudio`.**
-On macOS, install PortAudio first: `brew install portaudio`. On Linux, install: `sudo apt-get install portaudio19-dev python3-pyaudio`. Then retry the pip install command.
-
-**The `/api/chat` endpoint responds with "I'm having trouble connecting to my brain".**
-The `API_KEY` variable in your `.env` file is missing or invalid. This key is required by `api_server.py` to reach Gemma 4 on Google AI Studio. Confirm the key is present and correct.
+This project is licensed under the [MIT License](LICENSE).

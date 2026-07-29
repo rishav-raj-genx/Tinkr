@@ -7,7 +7,7 @@ def get_tasks_service():
     if not os.path.exists('token.json'):
         raise Exception("Tasks is not authenticated. Missing token.json.")
     
-    creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'])
+    creds = Credentials.from_authorized_user_file('token.json')
     
     # Explicitly refresh the token if expired
     if creds and creds.expired and creds.refresh_token:

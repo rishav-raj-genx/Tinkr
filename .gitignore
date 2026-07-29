@@ -1,19 +1,25 @@
-# Ignore environment variables and security credentials
+# Secrets & credentials
 .env
 token.json
-company_data.db
+credentials.json
+serviceAccountKey.json
 
-# Ignore Python cache and virtual environment
+# Generated databases
+*.db
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 venv/
 .venv/
 
-# Ignore step-by-step educational CLI scripts (optional standalone scripts)
-step1_connect.py
-step2_voice.py
-step3_transcription.py
-step4_booking_tool.py
-step5_e2e.py
-response.wav
-serviceAccountKey.json
+# Audio artifacts
+*.wav
+*.webm
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/
+.agents/

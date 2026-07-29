@@ -19,7 +19,7 @@ def get_weather(location: str) -> str:
     url_forecast = f"http://api.openweathermap.org/data/2.5/forecast?q={location}&appid={api_key}&units=metric"
     
     try:
-        resp_curr = requests.get(url_current)
+        resp_curr = requests.get(url_current, timeout=5)
         if resp_curr.status_code == 404:
             return json.dumps({"error": f"Location '{location}' not found."})
         elif resp_curr.status_code != 200:
@@ -28,7 +28,7 @@ def get_weather(location: str) -> str:
         data_curr = resp_curr.json()
         
         # Try to get forecast
-        resp_fore = requests.get(url_forecast)
+        resp_fore = requests.get(url_forecast, timeout=5)
         forecast_list = []
         if resp_fore.status_code == 200:
             data_fore = resp_fore.json()
