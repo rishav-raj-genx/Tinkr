@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3
 import traceback
 import base64
 from datetime import datetime, timezone
@@ -26,9 +27,129 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# ── In-memory storage ──
-user_mental_states = {}  # user_id -> list of state_data dicts
+# ── In-memory chat history (per session, not persisted) ──
 chat_histories = {}      # user_id -> list of message dicts
+
+# ── SQLite DB Path ──
+DB_PATH = 'company_data.db'
+
+
+def get_db():
+    """Get a SQLite connection with row factory."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def save_emotional_state_db(user_id, predicted_state, user_confirmed, mean_zcr,
+                            rms_variance, voice_energy_level, suggestions):
+    """Save an emotional state to the database and return its ID."""
+    conn = get_db()
+    try:
+        cursor = conn.execute(
+            '''INSERT INTO emotional_states
+               (user_id, predicted_state, user_confirmed, mean_zcr, rms_variance,
+                voice_energy_level, suggestions, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (user_id, predicted_state, user_confirmed, mean_zcr, rms_variance,
+             voice_energy_level, json.dumps(suggestions),
+             datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def get_emotional_history_db(user_id, limit=20):
+    """Get the emotional state history for a user from the database."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            '''SELECT id, predicted_state, user_confirmed, mean_zcr, rms_variance,
+                      voice_energy_level, suggestions, timestamp
+               FROM emotional_states
+               WHERE user_id = ?
+               ORDER BY id DESC LIMIT ?''',
+            (user_id, limit)
+        ).fetchall()
+        result = []
+        for row in rows:
+            entry = dict(row)
+            try:
+                entry['suggestions'] = json.loads(entry['suggestions'])
+            except (json.JSONDecodeError, TypeError):
+                entry['suggestions'] = []
+            result.append(entry)
+        return result
+    finally:
+        conn.close()
+
+
+def save_emotional_chat_db(user_id, emotional_state_id, role, content):
+    """Save a chat message linked to an emotional state."""
+    conn = get_db()
+    try:
+        conn.execute(
+            '''INSERT INTO emotional_chats
+               (user_id, emotional_state_id, role, content, timestamp)
+               VALUES (?, ?, ?, ?, ?)''',
+            (user_id, emotional_state_id, role, content,
+             datetime.now(timezone.utc).isoformat())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_emotional_chats_db(emotional_state_id):
+    """Get all chat messages for a specific emotional state."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            '''SELECT role, content, timestamp
+               FROM emotional_chats
+               WHERE emotional_state_id = ?
+               ORDER BY id ASC''',
+            (emotional_state_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_full_emotional_chat_history_db(user_id, limit=20):
+    """Get emotional states with their associated chat messages for a user."""
+    conn = get_db()
+    try:
+        states = conn.execute(
+            '''SELECT id, predicted_state, user_confirmed, mean_zcr, rms_variance,
+                      voice_energy_level, suggestions, timestamp
+               FROM emotional_states
+               WHERE user_id = ? AND user_confirmed = 1
+               ORDER BY id DESC LIMIT ?''',
+            (user_id, limit)
+        ).fetchall()
+        result = []
+        for state in states:
+            entry = dict(state)
+            try:
+                entry['suggestions'] = json.loads(entry['suggestions'])
+            except (json.JSONDecodeError, TypeError):
+                entry['suggestions'] = []
+            chats = conn.execute(
+                '''SELECT role, content, timestamp
+                   FROM emotional_chats
+                   WHERE emotional_state_id = ?
+                   ORDER BY id ASC''',
+                (entry['id'],)
+            ).fetchall()
+            entry['chats'] = [dict(c) for c in chats]
+            result.append(entry)
+        return result
+    finally:
+        conn.close()
 
 # ── LLM Client (Gemma 4 via Google AI Studio) ──
 client = OpenAI(
@@ -515,23 +636,21 @@ def handle_save_mental_state():
     if not user_id:
         return jsonify({"success": False, "message": "user_id is required."}), 400
 
-    state_data = {
-        "predicted_state": data.get("predicted_state", "unknown"),
-        "user_confirmed": data.get("user_confirmed", False),
-        "mean_zcr": data.get("mean_zcr", 0.0),
-        "rms_variance": data.get("rms_variance", 0.0),
-        "voice_energy_level": data.get("voice_energy_level", "medium"),
-        "suggestions": data.get("suggestions", []),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-
-    if user_id not in user_mental_states:
-        user_mental_states[user_id] = []
-
-    user_mental_states[user_id].insert(0, state_data)
-
-    print(f" [IN-MEMORY STATE] Saved mental state for '{user_id}': {state_data['predicted_state']}")
-    return jsonify({"success": True, "message": "Mental state saved successfully."})
+    try:
+        state_id = save_emotional_state_db(
+            user_id=user_id,
+            predicted_state=data.get("predicted_state", "unknown"),
+            user_confirmed=data.get("user_confirmed", False),
+            mean_zcr=data.get("mean_zcr", 0.0),
+            rms_variance=data.get("rms_variance", 0.0),
+            voice_energy_level=data.get("voice_energy_level", "medium"),
+            suggestions=data.get("suggestions", [])
+        )
+        print(f" [DB STATE] Saved emotional state for '{user_id}': {data.get('predicted_state')} (id={state_id})")
+        return jsonify({"success": True, "message": "Mental state saved successfully.", "state_id": state_id})
+    except Exception as e:
+        print(f" [DB ERROR] Failed to save emotional state: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route('/api/get_mental_state_history', methods=['POST'])
@@ -541,10 +660,68 @@ def handle_get_mental_state_history():
     if not user_id:
         return jsonify({"success": False, "history": [], "message": "user_id is required."}), 400
 
-    limit = data.get("limit", 10)
-    history = user_mental_states.get(user_id, [])[:limit]
+    limit = data.get("limit", 20)
+    try:
+        history = get_emotional_history_db(user_id, limit)
+        return jsonify({"success": True, "history": history})
+    except Exception as e:
+        print(f" [DB ERROR] Failed to fetch history: {e}")
+        return jsonify({"success": False, "history": [], "message": str(e)}), 500
 
-    return jsonify({"success": True, "history": history})
+
+@app.route('/api/save_emotional_chat', methods=['POST'])
+def handle_save_emotional_chat():
+    """Save a user+assistant chat pair linked to an emotional state."""
+    data = request.json
+    user_id = data.get('user_id')
+    state_id = data.get('emotional_state_id')
+    user_message = data.get('user_message', '')
+    assistant_message = data.get('assistant_message', '')
+
+    if not user_id or not state_id:
+        return jsonify({"success": False, "message": "user_id and emotional_state_id are required."}), 400
+
+    try:
+        if user_message:
+            save_emotional_chat_db(user_id, state_id, 'user', user_message)
+        if assistant_message:
+            save_emotional_chat_db(user_id, state_id, 'assistant', assistant_message)
+        print(f" [DB CHAT] Saved emotional chat for state_id={state_id}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f" [DB ERROR] Failed to save emotional chat: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/api/get_emotional_chats', methods=['POST'])
+def handle_get_emotional_chats():
+    """Get chat messages for a specific emotional state."""
+    data = request.json
+    state_id = data.get('emotional_state_id')
+    if not state_id:
+        return jsonify({"success": False, "chats": [], "message": "emotional_state_id is required."}), 400
+
+    try:
+        chats = get_emotional_chats_db(state_id)
+        return jsonify({"success": True, "chats": chats})
+    except Exception as e:
+        return jsonify({"success": False, "chats": [], "message": str(e)}), 500
+
+
+@app.route('/api/get_emotional_chat_history', methods=['POST'])
+def handle_get_emotional_chat_history():
+    """Get all confirmed emotional states with their chat messages for a user."""
+    data = request.json
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({"success": False, "history": [], "message": "user_id is required."}), 400
+
+    limit = data.get("limit", 20)
+    try:
+        history = get_full_emotional_chat_history_db(user_id, limit)
+        return jsonify({"success": True, "history": history})
+    except Exception as e:
+        return jsonify({"success": False, "history": [], "message": str(e)}), 500
 
 
 

@@ -325,6 +325,14 @@ Gmail tools (`check_unread_emails`, `draft_email`, `send_email`) are defined dir
 
 ---
 
+---
+
+## Trademarks & Disclaimers
+
+Gemma is a trademark of Google LLC. **Tinkr** is an independent project created for the *Build with Gemma 4 - AI Durg Hackathon* and is not affiliated with or officially endorsed by Google LLC.
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

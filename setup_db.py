@@ -37,6 +37,33 @@ def setup_database():
         )
     ''')
 
+    # ── Emotion Detection Tables ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS emotional_states (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            predicted_state TEXT NOT NULL,
+            user_confirmed BOOLEAN DEFAULT 0,
+            mean_zcr REAL DEFAULT 0.0,
+            rms_variance REAL DEFAULT 0.0,
+            voice_energy_level TEXT DEFAULT 'medium',
+            suggestions TEXT DEFAULT '[]',
+            timestamp TEXT NOT NULL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS emotional_chats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            emotional_state_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (emotional_state_id) REFERENCES emotional_states(id)
+        )
+    ''')
+
     # Clear existing data just in case
     cursor.execute('DELETE FROM sales')
     cursor.execute('DELETE FROM products')

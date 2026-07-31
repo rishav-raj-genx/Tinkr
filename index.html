@@ -513,6 +513,137 @@
             color: var(--text-muted);
         }
 
+        /* ── Emotional Chat History Sidebar ── */
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .emo-history-item {
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: 12px;
+            margin-bottom: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .emo-history-item:hover {
+            border-color: var(--border);
+            background: var(--surface-elevated);
+        }
+
+        .emo-history-item.expanded {
+            border-color: var(--accent);
+        }
+
+        .emo-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .emo-state-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .emo-state-badge.stressed {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+        }
+
+        .emo-state-badge.anxious {
+            background: rgba(251, 191, 36, 0.15);
+            color: #fbbf24;
+        }
+
+        .emo-state-badge.fatigued {
+            background: rgba(96, 165, 250, 0.15);
+            color: #60a5fa;
+        }
+
+        .emo-time {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .emo-chat-thread {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border);
+            display: none;
+        }
+
+        .emo-chat-thread.visible {
+            display: block;
+            animation: fade-in 0.3s ease;
+        }
+
+        .emo-chat-bubble {
+            padding: 0.6rem 0.85rem;
+            border-radius: 12px;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            max-width: 90%;
+        }
+
+        .emo-chat-bubble.user-bubble {
+            background: var(--surface-elevated);
+            color: var(--text-muted);
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+            text-align: right;
+        }
+
+        .emo-chat-bubble.assistant-bubble {
+            background: rgba(226, 183, 20, 0.1);
+            color: var(--text-main);
+            border-bottom-left-radius: 4px;
+        }
+
+        .emo-no-chats {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            text-align: center;
+            padding: 0.5rem;
+            font-style: italic;
+        }
+
+        .emo-expand-icon {
+            font-size: 1.1rem;
+            color: var(--text-dim);
+            transition: transform 0.2s;
+        }
+
+        .emo-history-item.expanded .emo-expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 49;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .sidebar-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         /* Animations */
         @keyframes fade-in {
             from { opacity: 0; transform: translateY(10px); }
@@ -617,9 +748,14 @@
             <span class="material-icons-round">smart_toy</span>
             Tinkr
         </div>
-        <button class="icon-btn" id="historyBtn" title="Mental State History">
-            <span class="material-icons-round">history</span>
-        </button>
+        <div class="header-actions">
+            <button class="icon-btn" id="historyBtn" title="Mental State History">
+                <span class="material-icons-round">history</span>
+            </button>
+            <button class="icon-btn" id="emoChatHistoryBtn" title="Emotional Chat History">
+                <span class="material-icons-round">favorite</span>
+            </button>
+        </div>
     </header>
 
     <!-- ── Main Stage ── -->
@@ -690,6 +826,22 @@
         </div>
     </aside>
 
+    <!-- ── Sidebar Overlay ── -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- ── Emotional Chat History Sidebar ── -->
+    <aside class="sidebar" id="emoChatSidebar">
+        <div class="sidebar-header">
+            <h3><span class="material-icons-round">favorite</span> Emotional Chats</h3>
+            <button class="icon-btn" id="closeEmoChatSidebar">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div id="emoChatHistoryContent">
+            <p style="color: var(--text-dim); text-align: center; margin-top: 2rem;">No emotional chats yet.</p>
+        </div>
+    </aside>
+
     <script>
         // ── DOM Elements ──
         const UI = {
@@ -714,7 +866,12 @@
             wellnessModal: document.getElementById('wellnessModal'),
             wellnessIcon: document.getElementById('wellnessIcon'),
             wellnessTitle: document.getElementById('wellnessTitle'),
-            wellnessDesc: document.getElementById('wellnessDesc')
+            wellnessDesc: document.getElementById('wellnessDesc'),
+            emoChatHistoryBtn: document.getElementById('emoChatHistoryBtn'),
+            emoChatSidebar: document.getElementById('emoChatSidebar'),
+            closeEmoChatSidebar: document.getElementById('closeEmoChatSidebar'),
+            emoChatHistoryContent: document.getElementById('emoChatHistoryContent'),
+            sidebarOverlay: document.getElementById('sidebarOverlay')
         };
 
         // ── State ──
@@ -738,6 +895,7 @@
         let currentUserId = '';
         let pendingBiomarkerData = null;
         let micAnalyser = null;
+        let currentEmotionalStateId = null;  // Tracks active emotional state for chat linking
 
         // ── Navigation & Fallback Listeners ──
         UI.toggleFallbackBtn.addEventListener('click', () => {
@@ -771,13 +929,38 @@
         });
 
         UI.historyBtn.addEventListener('click', () => {
+            closeAllSidebars();
             UI.sidebar.classList.add('open');
+            UI.sidebarOverlay.classList.add('active');
             if (currentUserId) loadHistory();
         });
 
         UI.closeSidebar.addEventListener('click', () => {
             UI.sidebar.classList.remove('open');
+            UI.sidebarOverlay.classList.remove('active');
         });
+
+        UI.emoChatHistoryBtn.addEventListener('click', () => {
+            closeAllSidebars();
+            UI.emoChatSidebar.classList.add('open');
+            UI.sidebarOverlay.classList.add('active');
+            if (currentUserId) loadEmotionalChatHistory();
+        });
+
+        UI.closeEmoChatSidebar.addEventListener('click', () => {
+            UI.emoChatSidebar.classList.remove('open');
+            UI.sidebarOverlay.classList.remove('active');
+        });
+
+        UI.sidebarOverlay.addEventListener('click', () => {
+            closeAllSidebars();
+        });
+
+        function closeAllSidebars() {
+            UI.sidebar.classList.remove('open');
+            UI.emoChatSidebar.classList.remove('open');
+            UI.sidebarOverlay.classList.remove('active');
+        }
 
         // ── Session Start ──
         UI.startBtn.addEventListener('click', async () => {
@@ -1021,6 +1204,26 @@
                     UI.controlsContainer.style.opacity = '1';
                     UI.controlsContainer.style.pointerEvents = 'auto';
                 }
+
+                // Save emotional chat to DB if this was an emotional context conversation
+                if (emotionContext && currentEmotionalStateId && fullResponse.trim()) {
+                    try {
+                        await fetch('http://127.0.0.1:5000/api/save_emotional_chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                user_id: currentUserId,
+                                emotional_state_id: currentEmotionalStateId,
+                                user_message: text,
+                                assistant_message: fullResponse.trim()
+                            })
+                        });
+                        console.log('[EMOTIONAL CHAT] Saved emotional chat for state', currentEmotionalStateId);
+                    } catch (saveErr) {
+                        console.error('[EMOTIONAL CHAT] Failed to save:', saveErr);
+                    }
+                    currentEmotionalStateId = null;  // Reset after saving
+                }
                 
             } catch (err) {
                 console.error("Pipeline Error:", err);
@@ -1191,11 +1394,16 @@
                 };
 
                 try {
-                    await fetch('http://127.0.0.1:5000/api/save_mental_state', {
+                    const saveRes = await fetch('http://127.0.0.1:5000/api/save_mental_state', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
+                    const saveData = await saveRes.json();
+                    if (saveData.state_id) {
+                        currentEmotionalStateId = saveData.state_id;
+                        console.log('[WELLNESS] Saved state with id:', currentEmotionalStateId);
+                    }
                 } catch (err) {
                     console.error("Save Error:", err);
                 }
@@ -1240,6 +1448,89 @@
             } catch (err) {
                 UI.historyContent.innerHTML = '<p style="color: var(--danger); text-align: center;">Error loading history.</p>';
             }
+        }
+
+        // ── Emotional Chat History ──
+        async function loadEmotionalChatHistory() {
+            UI.emoChatHistoryContent.innerHTML = '<p style="color: var(--text-dim); text-align: center;">Loading...</p>';
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/get_emotional_chat_history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: currentUserId, limit: 20 })
+                });
+                const data = await res.json();
+
+                if (!data.success || data.history.length === 0) {
+                    UI.emoChatHistoryContent.innerHTML = '<p style="color: var(--text-dim); text-align: center; margin-top: 2rem;">No emotional chats yet.</p>';
+                    return;
+                }
+
+                const stateIcons = { stressed: 'warning', anxious: 'help_outline', fatigued: 'battery_alert' };
+
+                UI.emoChatHistoryContent.innerHTML = data.history.map((entry, idx) => {
+                    const icon = stateIcons[entry.predicted_state] || 'psychology';
+                    const date = new Date(entry.timestamp);
+                    const timeStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
+                                    date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+                    let chatHTML = '';
+                    if (entry.chats && entry.chats.length > 0) {
+                        chatHTML = entry.chats.map(c => {
+                            const bubbleClass = c.role === 'user' ? 'user-bubble' : 'assistant-bubble';
+                            return `<div class="emo-chat-bubble ${bubbleClass}">${escapeHtml(c.content)}</div>`;
+                        }).join('');
+                    } else {
+                        chatHTML = '<div class="emo-no-chats">No conversation recorded</div>';
+                    }
+
+                    return `
+                        <div class="emo-history-item" onclick="toggleEmoChat(this)" data-idx="${idx}">
+                            <div class="emo-item-header">
+                                <span class="emo-state-badge ${entry.predicted_state}">
+                                    <span class="material-icons-round" style="font-size: 0.9rem;">${icon}</span>
+                                    ${entry.predicted_state}
+                                </span>
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span class="emo-time">${timeStr}</span>
+                                    <span class="material-icons-round emo-expand-icon">expand_more</span>
+                                </div>
+                            </div>
+                            <div class="emo-chat-thread" id="emoThread-${idx}">
+                                ${chatHTML}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error('Emotional chat history error:', err);
+                UI.emoChatHistoryContent.innerHTML = '<p style="color: var(--danger); text-align: center;">Error loading history.</p>';
+            }
+        }
+
+        function toggleEmoChat(element) {
+            const idx = element.dataset.idx;
+            const thread = document.getElementById('emoThread-' + idx);
+            if (!thread) return;
+            const isExpanded = element.classList.contains('expanded');
+            // Collapse all first
+            document.querySelectorAll('.emo-history-item').forEach(item => {
+                item.classList.remove('expanded');
+                const t = item.querySelector('.emo-chat-thread');
+                if (t) t.classList.remove('visible');
+            });
+            // Toggle the clicked one
+            if (!isExpanded) {
+                element.classList.add('expanded');
+                thread.classList.add('visible');
+            }
+        }
+        window.toggleEmoChat = toggleEmoChat;
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // ── Helpers ──
