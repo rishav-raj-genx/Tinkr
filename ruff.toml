@@ -1,0 +1,15 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort (import sorting)
+]
+ignore = [
+    "E501",  # Line length (long strings in prompts/HTML/SQL)
+    "W291",  # Trailing whitespace
+    "W293",  # Blank line whitespace
+]

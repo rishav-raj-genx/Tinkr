@@ -11,6 +11,8 @@ An autonomous voice AI assistant powered by Gemma 4. Tinkr captures speech throu
 | Feature | Description |
 |---------|-------------|
 | **Voice-First Interface** | Speak naturally; Tinkr transcribes, reasons, and speaks back |
+| **Portfolio Demo Sandbox** | Safe, out-of-the-box exploration for visitors without needing Google credentials |
+| **Owner Live Mode** | Secure owner authentication unlocking real Google Calendar, Gmail, and Tasks |
 | **Text Fallback** | Collapsible text input for typed commands, email addresses, and context |
 | **Google Calendar** | Check availability, book meetings, set reminders |
 | **Gmail** | Check unread emails, draft emails, send emails |
@@ -22,6 +24,79 @@ An autonomous voice AI assistant powered by Gemma 4. Tinkr captures speech throu
 | **Wellness Modal** | Confirms detected emotional state and injects empathetic context into LLM |
 | **Streaming Responses** | Real-time SSE streaming with sentence-by-sentence TTS playback |
 | **Thought Filtering** | Strips `<thought>`/`<think>` tags from Gemma 4 output before display |
+| **Hardened Security** | Pydantic v2 validation, anti-IDOR sessions, rate limits, CSP, and prompt isolation |
+
+---
+
+## Portfolio Demo Sandbox vs. Owner Mode
+
+Tinkr features a built-in dual-mode architecture designed for public demonstration and evaluation:
+
+```
+                            Visitor / Evaluator
+                                    │
+                         ┌──────────┴──────────┐
+                         ▼                     ▼
+               Unauthenticated Guest       Authenticated Owner
+               (Demo Sandbox Mode)         (Owner Live Mode)
+                         │                     │
+                ┌────────┴────────┐            │
+                ▼                 ▼            ▼
+         Safe Non-Workspace   Google Tools    Full Live Access
+         (Search, Weather,   Intercepted by   to Real Google
+         Biomarkers, LLM)    Sandbox Mock     Calendar, Gmail,
+                │                 │           and Tasks APIs
+                ▼                 ▼
+          Live Results      [DEMO SANDBOX]
+                            Structured Data
+```
+
+- **Portfolio Demo Sandbox (Default for Visitors):**
+  - Evaluators and visitors can immediately run and test the complete voice AI assistant workflow without configuring Google Cloud projects, OAuth consent screens, or client credentials.
+  - Safe tools (web search, weather, SQLite querying, voice biomarker analysis, and Gemma 4 reasoning) execute live.
+  - Google Workspace tools (`check_availability`, `book_meeting`, `set_reminder`, `add_task`, `list_tasks`, `check_unread_emails`, `draft_email`, `send_email`) are intercepted by the server-side sandbox dispatcher, returning realistic, structured simulated responses prefixed with `[DEMO SANDBOX]`.
+- **Owner Live Mode (Unlocked via `OWNER_ACCESS_KEY`):**
+  - Setting `OWNER_ACCESS_KEY` in `.env` enables owner authentication.
+  - The repository owner can click the mode badge in the UI header or submit a key to `POST /api/auth/owner` (verified using constant-time `hmac.compare_digest`).
+  - Upon successful authentication, the signed session upgrades to `role: owner`, activating live Google Calendar, Gmail, and Tasks actions using the owner's `token.json`.
+  - Calling `POST /api/auth/logout` rotates the session back to guest mode.
+
+---
+
+## Security Architecture
+
+Tinkr enforces defense-in-depth security across all architectural layers:
+
+1. **Strict Input Validation (Pydantic v2):**
+   - Every POST endpoint validates incoming payloads through Pydantic schemas ([schemas.py](file:///Users/apple/Desktop/Tinkr/schemas.py)) with `extra="forbid"`, strip-whitespace normalization, and strict boundaries.
+   - Incoming requests are hard-capped at 5 MB (`MAX_CONTENT_LENGTH = 5 * 1024 * 1024`) returning HTTP 413.
+   - Base64 audio payloads are constrained to ~2 MB decoded length and validated for even-byte int16 PCM alignment.
+2. **Session-Bound Identity (Anti-IDOR):**
+   - Cryptographically signed `HttpOnly`, `SameSite=Lax`, and dynamic `Secure` cookies manage user sessions.
+   - Storage partitioning for emotional wellness and mental state history is strictly bound to the server-managed `session["sid"]`, preventing Insecure Direct Object References (IDOR) even if a malicious client supplies another user's display ID.
+3. **Hardened Read-Only SQLite (`sql_tool.py`):**
+   - Database connections open in true read-only URI mode (`file:{DB_PATH}?mode=ro`, `PRAGMA query_only = ON;`).
+   - Query guardrails reject semicolons, SQL comments (`--`, `/*`), and non-`SELECT` keywords (`DROP`, `DELETE`, `UPDATE`, `INSERT`, `ATTACH`, `PRAGMA`, etc.).
+   - Query results are capped at 100 rows, and an SQLite progress handler aborts queries exceeding 250,000 opcodes to prevent denial-of-service.
+4. **Sliding-Window Rate Limiting:**
+   - In-memory thread-safe `RateLimiter` enforces rate quotas per `(bucket, client_ip, session_sid)` with automatic stale key eviction:
+     - `/api/chat_stream`: 15 requests / 60s
+     - `/api/transcribe`: 15 requests / 60s
+     - `/api/analyze_audio`: 25 requests / 60s
+     - `/api/auth/owner`: 5 requests / 900s (brute-force defense)
+     - State/History endpoints: 60 requests / 60s
+   - Exceeded quotas return HTTP `429 Too Many Requests` with standard `Retry-After` headers.
+5. **Defense-in-Depth HTTP Security Headers:**
+   - `Content-Security-Policy`: Restricts scripts/styles to `'self'` and `'unsafe-inline'`, fonts to Google Fonts, media to `'self' blob: data:`, and connection endpoints to localhost:5000.
+   - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`.
+   - `Permissions-Policy: microphone=(self), camera=(), geolocation=()`.
+   - `Strict-Transport-Security` applied when terminating HTTPS.
+6. **LLM Prompt-Injection Boundaries & Token Capping:**
+   - Spoken transcripts and text inputs are wrapped in `<user_utterance>...</user_utterance>` and emotional distress context in `<wellness_context>...</wellness_context>`.
+   - Explicit system instructions instruct the Gemma 4 reasoning engine to treat all delimiter contents strictly as untrusted data.
+   - Hard output token caps (`max_tokens=1024`) and explicit upstream timeouts (`timeout=10.0`) prevent token exhaustion and hanging connections.
+7. **Frontend DOM XSS Sanitization:**
+   - All dynamic text rendering in `index.html` passes through `escapeHtml()` and `renderSafeText()` to neutralize HTML/JS payloads before DOM insertion.
 
 ---
 
@@ -53,18 +128,26 @@ Browser (index.html, port 8000)         Python Backend (api_server.py, port 5000
 Tinkr/
 ├── api_server.py         Flask API server — chat streaming, tool routing, biomarker analysis
 ├── auth_server.py        One-time OAuth server to generate token.json
-├── index.html            Single-page frontend — voice UI, visualizer, text fallback
+├── config.py             Centralized configuration, safe defaults, and diagnostics
+├── logger.py             Structured logging with automatic secret redaction
+├── schemas.py            Strict Pydantic v2 validation models for all POST endpoints
+├── security.py           Signed session identity, anti-IDOR, rate limiting, and sandbox
+├── index.html            Single-page frontend — voice UI, visualizer, text fallback, mode badge
 ├── biomarker_tool.py     Voice biomarker engine — per-user adaptive baseline calibration
 ├── calendar_tool.py      Google Calendar — check availability, book meetings, set reminders
 ├── tasks_tool.py         Google Tasks — add and list tasks
 ├── web_tool.py           DuckDuckGo search + Google News RSS
 ├── weather_tool.py       OpenWeatherMap current weather and forecast
-├── sql_tool.py           Read-only SQLite query interface
+├── sql_tool.py           Hardened read-only SQLite interface with query/opcode caps
 ├── setup_db.py           Seeds company_data.db with sample data
-├── requirements.txt      Python dependencies
-├── .env                  Environment variables (not committed)
+├── tests/                Comprehensive pytest regression and security test suite
+├── Makefile              Development workflow automation (setup, dev, lint, test, audit)
+├── requirements.txt      Pinned production dependencies
+├── requirements-dev.txt  Pinned testing, linting, and security audit dependencies
+├── .env.example          Documented template of all supported environment variables
+├── .env                  Runtime environment variables (not committed)
 ├── token.json            OAuth credentials (not committed, generated by auth_server.py)
-├── .gitignore
+├── .gitignore            Git exclusion rules for secrets, DBs, and virtualenvs
 └── LICENSE               MIT License
 ```
 
@@ -83,14 +166,23 @@ Tinkr/
 
 ## Setup
 
-### 1. Clone and Install
+### 1. Automated Setup (Recommended)
 
 ```bash
 git clone https://github.com/rishav-raj-genx/Tinkr.git
 cd Tinkr
+make setup
+```
+
+`make setup` automatically creates a virtual environment, installs dependencies from `requirements-dev.txt`, initializes `.env` from `.env.example`, and seeds `company_data.db`.
+
+Alternatively, manual install:
+```bash
 python3 -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+cp .env.example .env
+python3 setup_db.py
 ```
 
 ### 2. Configure Environment Variables
@@ -159,22 +251,21 @@ A `token.json` file is now saved in the project root. Do not commit this file.
 
 ## Running the Application
 
-Two terminals are required:
-
-**Terminal 1 — API Server:**
+### Option A: Single-Port Unified Mode (Recommended)
+Launch the unified server which serves both the frontend UI and API endpoints:
 ```bash
-source venv/bin/activate
-python3 api_server.py
+make dev
+# Or: python3 api_server.py
 ```
+Open **Google Chrome** at **`http://localhost:5000`**.
 
-**Terminal 2 — Frontend Server:**
-```bash
-python3 -m http.server 8000
-```
-
+### Option B: Split-Port Development Mode
+If running the frontend independently on port 8000:
+- **Terminal 1 (Backend):** `make dev` (Port 5000)
+- **Terminal 2 (Frontend):** `python3 -m http.server 8000` (Port 8000)
 Open **Google Chrome** at `http://localhost:8000`.
 
-> **Important:** Always use `localhost`, not `127.0.0.1`. Chrome requires the `localhost` hostname for microphone access over HTTP.
+> **Important:** Always access using `localhost` rather than `127.0.0.1` so Chrome grants microphone media stream permissions over HTTP.
 
 ---
 
@@ -182,12 +273,22 @@ Open **Google Chrome** at `http://localhost:8000`.
 
 All endpoints are served on port 5000. Requests and responses use JSON.
 
-### Core
+### Core & System
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/chat_stream` | Primary endpoint. Streams LLM response via SSE with tool-call support |
+| `GET`  | `/` | Serves the single-page frontend application (`index.html`) |
+| `GET`  | `/api/health` | System health check (database connection, token status, diagnostics) |
+| `POST` | `/api/chat_stream` | Primary streaming endpoint. Streams LLM response via SSE with tool support |
 | `POST` | `/api/transcribe` | Transcribes audio file (WebM) to text via Groq Whisper |
+
+### Session & Owner Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET`  | `/api/session` | Returns active session role (`guest` or `owner`) and workspace mode (`sandbox` or `live`) |
+| `POST` | `/api/auth/owner` | Authenticates repository owner using `OWNER_ACCESS_KEY` to unlock live Google tools |
+| `POST` | `/api/auth/logout` | Resets session back to guest mode and rotates session ID |
 
 ### Biomarker & Wellness
 
@@ -196,6 +297,9 @@ All endpoints are served on port 5000. Requests and responses use JSON.
 | `POST` | `/api/analyze_audio` | Analyzes PCM audio for voice biomarkers (stress/anxiety/fatigue) |
 | `POST` | `/api/save_mental_state` | Saves a user-confirmed mental state record |
 | `POST` | `/api/get_mental_state_history` | Returns recent mental state logs for a user |
+| `POST` | `/api/save_emotional_chat` | Persists conversation exchanges tied to an emotional state |
+| `POST` | `/api/get_emotional_chats` | Returns conversation for a specific emotional state ID |
+| `POST` | `/api/get_emotional_chat_history` | Returns all confirmed states joined with chat history |
 
 ### `/api/chat_stream`
 
@@ -308,6 +412,7 @@ Gmail tools (`check_unread_emails`, `draft_email`, `send_email`) are defined dir
 | `API_KEY` | Yes | Google AI Studio API key (Gemma 4) |
 | `GROQ_API_KEY` | Yes | Groq API key (Whisper STT) |
 | `WEATHER_API_KEY` | Yes | OpenWeatherMap API key |
+| `OWNER_ACCESS_KEY` | Optional | Shared secret unlocking Owner Live Mode for Google Workspace |
 
 ---
 
@@ -326,6 +431,66 @@ Gmail tools (`check_unread_emails`, `draft_email`, `send_email`) are defined dir
 ---
 
 ---
+
+## $0 portfolio deployment (Docker Space)
+
+The included `Dockerfile` targets Hugging Face Spaces' Docker SDK and listens on
+port `7860`. It installs `libsndfile1` and `ffmpeg`, runs as the unprivileged
+`tinkr` user, seeds `company_data.db` only when it is absent, and starts one
+`gthread` Gunicorn worker (`4` threads, `120` second timeout). One worker avoids
+duplicating librosa's native memory while still allowing concurrent SSE requests.
+The database and all in-container files are disposable; no OAuth token is copied
+into the image.
+
+Measured on 17 November 2026 with the pinned requirements, the virtualenv's
+Python packages occupy 528 MB on disk; the largest contributors are SciPy 82 MB,
+llvmlite 129 MB, scikit-learn 31 MB, and NumPy 26 MB. A one-second biomarker
+request reached 209 MB resident memory on the audit machine. Linux container
+headroom should be planned at 300–450 MB per worker because native BLAS/ffmpeg
+allocations and request concurrency add to that baseline. The final compressed
+image size must be measured by `docker image inspect` after a Docker daemon is
+available; this checkout's daemon was unavailable during the audit.
+
+### Hugging Face Spaces setup
+
+1. Create a Space, choose **Docker**, and set the Space port to `7860`. CPU Basic
+   is documented as 2 vCPU/16 GB RAM/50 GB non-persistent disk. Hugging Face's
+   current documentation says Docker Spaces may require an eligible subscription,
+   so verify the account's hardware price shows `$0.00` before deploying.
+2. Push this repository (including `Dockerfile` and `.dockerignore`) to the Space.
+3. In **Settings → Variables and secrets**, add `FLASK_ENV=production`, a random
+   `SECRET_KEY`, `API_KEY`, and `GROQ_API_KEY`. Add `WEATHER_API_KEY` only when
+   weather is desired. Leave `OWNER_ACCESS_KEY`, Google client values, and
+   `TOKEN_PATH` unset for the public demo; visitors remain in `[DEMO SANDBOX]`.
+   Set `FRONTEND_URL` to the Space URL. Never upload `.env`, `token.json`, or a
+   database file.
+4. Wait for the build, then check `https://<space>.hf.space/api/health`. A healthy
+   response has `database.connected: true`; the first boot may be a cold start.
+   `/api/chat_stream` emits SSE with `Cache-Control: no-cache` and
+   `X-Accel-Buffering: no`.
+
+### Provider decision and limitations
+
+| Provider | $0 capacity relevant to Tinkr | Sleep/storage | Decision |
+| --- | --- | --- | --- |
+| Hugging Face Docker Space | CPU Basic is documented at 16 GB RAM and 2 vCPU; account eligibility for Docker at $0 must be confirmed | 50 GB disk is non-persistent; rebuilds/restarts lose the seeded DB | Preferred when the account exposes the documented free CPU Basic hardware. Safest RAM margin. |
+| Render Free Web Service | Free service; 750 instance-hours/month | Spins down after 15 minutes idle, cold start about one minute; filesystem is ephemeral and local SQLite is lost on restart | Viable only after memory testing. 512 MB leaves little margin for librosa; one worker is mandatory. |
+| Koyeb Free Instance | One 512 MB, 0.1 vCPU, 2 GB SSD instance per organization | Scales to zero after one hour without traffic; no volume on free instance | High OOM and CPU risk for librosa; use only as a low-confidence demo fallback. |
+| Fly.io | Current offer is a 2-hour/7-day free trial, not an ongoing $0 tier | Machines stop when trial ends unless billing is configured | Excluded from a strict perpetual $0 plan. |
+
+Do not use an uptime pinger to defeat sleep policies. Monitoring should be
+event-driven: configure UptimeRobot or Better Stack for an HTTP GET on
+`/api/health` at a normal interval, accept cold-start latency, and alert on
+non-2xx responses. These monitors must not be used to keep a service awake.
+
+### Rollback
+
+Deploy from immutable Git commits. If a Space build is bad, open **Settings →
+Revision**, select the previous known-good commit, and restart. For Render, use
+the dashboard's rollback to one of the two previous deploys. Verify `/api/health`,
+the sandbox calendar response, and a short SSE request after rollback. Because the
+free filesystems are ephemeral, rollback reseeds the sample database; never treat
+that database as durable user data.
 
 ## Trademarks & Disclaimers
 

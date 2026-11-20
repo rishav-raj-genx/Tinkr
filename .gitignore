@@ -1,24 +1,35 @@
-# Secrets & credentials
+# Environment & Secret Files
 .env
+.env.*
+!.env.example
 token.json
 credentials.json
 serviceAccountKey.json
 
-# Generated databases
-*.db
-
-# Python
+# Python & Build Artifacts
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
+*.pyc
 venv/
 .venv/
+.pytest_cache/
+.ruff_cache/
 
-# Audio artifacts
+# Databases & Storage
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Audio & Temporary Media
 *.wav
 *.webm
+*.mp3
 
-# IDE & OS
+# Operating System & IDE Files
 .DS_Store
 .vscode/
 .idea/

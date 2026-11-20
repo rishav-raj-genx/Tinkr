@@ -1,6 +1,11 @@
 import base64
-import numpy as np
+
 import librosa
+import numpy as np
+
+from logger import get_logger
+
+logger = get_logger("biomarker_tool")
 
 # ── Per-User Adaptive Baseline ──
 # Each user gets their own baseline so multiple sessions don't collide.
@@ -37,10 +42,15 @@ def _update_baseline(user_state: dict, features: dict):
 
     if len(user_state["buffer"]) >= CALIBRATION_COUNT and user_state["baseline"] is None:
         user_state["baseline"] = _compute_baseline(user_state["buffer"])
-        print(f"✅ [BIOMARKER] Baseline calibrated after {CALIBRATION_COUNT} samples:")
         b = user_state["baseline"]
-        print(f"   ZCR avg: {b['zcr']:.4f} | RMS Var avg: {b['rms_var']:.6f} | "
-              f"Centroid avg: {b['centroid']:.1f} | Pitch Std avg: {b['pitch_std']:.2f}")
+        logger.info(
+            "Baseline calibrated after %d samples: ZCR avg: %.4f | RMS Var avg: %.6f | Centroid avg: %.1f | Pitch Std avg: %.2f",
+            CALIBRATION_COUNT,
+            b["zcr"],
+            b["rms_var"],
+            b["centroid"],
+            b["pitch_std"],
+        )
 
 
 def _compute_baseline(buffer: list) -> dict:
@@ -212,7 +222,7 @@ def analyze_audio_biomarkers(base64_audio: str, user_id: str = "default") -> dic
 
         # Minimum duration: 1 second at 16kHz = 16000 samples
         if len(audio_array) < 16000:
-            print(f"⏩ [BIOMARKER] Audio too short ({len(audio_array)} samples), skipping.")
+            logger.info("Audio too short (%d samples), skipping analysis.", len(audio_array))
             return _make_calm_result(message="Audio too short for analysis.")
 
         # ── Extract Features ──
@@ -227,9 +237,16 @@ def analyze_audio_biomarkers(base64_audio: str, user_id: str = "default") -> dic
 
         cal_count = len(user_state["buffer"]) + 1
         baseline_status = "SET" if baseline else f"CALIBRATING ({cal_count}/{CALIBRATION_COUNT})"
-        print(f"🎙️ [BIOMARKER] [{user_id}] ZCR: {mean_zcr:.4f} | RMS Var: {rms_variance:.6f} | "
-              f"RMS Mean: {features['mean_rms']:.4f} | Centroid: {features['centroid']:.1f} | "
-              f"Pitch Std: {features['pitch_std']:.2f} | Baseline: {baseline_status}")
+        logger.info(
+            "[%s] ZCR: %.4f | RMS Var: %.6f | RMS Mean: %.4f | Centroid: %.1f | Pitch Std: %.2f | Baseline: %s",
+            user_id,
+            mean_zcr,
+            rms_variance,
+            features["mean_rms"],
+            features["centroid"],
+            features["pitch_std"],
+            baseline_status,
+        )
 
         # ── Phase 1: Calibration ──
         if baseline is None:
@@ -257,9 +274,15 @@ def analyze_audio_biomarkers(base64_audio: str, user_id: str = "default") -> dic
             feature_dict, baseline, voice_energy_level
         )
 
-        print(f"📊 [BIOMARKER] [{user_id}] Ratios → ZCR: {ratios['zcr']:.2f}x | "
-              f"RMS Var: {ratios['rms_var']:.2f}x | Centroid: {ratios['centroid']:.2f}x | "
-              f"Pitch: {ratios['pitch']:.2f}x | Elevated: {elevated_count}/4")
+        logger.info(
+            "[%s] Ratios -> ZCR: %.2fx | RMS Var: %.2fx | Centroid: %.2fx | Pitch: %.2fx | Elevated: %d/4",
+            user_id,
+            ratios["zcr"],
+            ratios["rms_var"],
+            ratios["centroid"],
+            ratios["pitch"],
+            elevated_count,
+        )
 
         # ── Continuously update baseline with calm readings ──
         if not alert:
@@ -272,8 +295,13 @@ def analyze_audio_biomarkers(base64_audio: str, user_id: str = "default") -> dic
 
         # ── Build message for LLM ──
         if alert:
-            print(f"🚨 [HEALTH ALERT] [{user_id}] Detected: {predicted_state.upper()} "
-                  f"(elevated {elevated_count}/4 features above {DEVIATION_FACTOR}x baseline)")
+            logger.warning(
+                "Health alert for [%s] detected: %s (elevated %d/4 features above %.1fx baseline)",
+                user_id,
+                predicted_state.upper(),
+                elevated_count,
+                DEVIATION_FACTOR,
+            )
             message = (
                 f"[SYSTEM EVENT: Voice biomarker analysis detected {predicted_state}. "
                 f"Voice energy is {voice_energy_level}. {elevated_count} out of 4 vocal "
@@ -295,7 +323,7 @@ def analyze_audio_biomarkers(base64_audio: str, user_id: str = "default") -> dic
         }
 
     except Exception as e:
-        print(f"❌ Audio Processing Error: {e}")
+        logger.error("Audio biomarker processing error: %s", e)
         return {
             "alert": False,
             "predicted_state": "unknown",

@@ -722,6 +722,66 @@
             transform: scale(1.05);
             opacity: 0.9;
         }
+
+        /* ── Session Mode Badge & Owner Modal ── */
+        .mode-badge-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
+            transition: all 0.2s;
+            margin-right: 0.25rem;
+        }
+
+        .mode-badge-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        .mode-badge-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fbbf24;
+        }
+
+        .mode-badge-btn.live .mode-badge-dot {
+            background: #34d399;
+            box-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+        }
+
+        .mode-badge-btn.live {
+            border-color: rgba(52, 211, 153, 0.3);
+            color: #34d399;
+        }
+
+        .toast-notification {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.75rem 1.25rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: rgba(239, 68, 68, 0.95);
+            color: #ffffff;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            z-index: 9999;
+            display: none;
+            animation: fade-in 0.2s ease forwards;
+        }
+
+        .toast-notification.success {
+            background: rgba(16, 185, 129, 0.95);
+        }
     </style>
 </head>
 
@@ -749,6 +809,10 @@
             Tinkr
         </div>
         <div class="header-actions">
+            <button class="mode-badge-btn" id="modeBadgeBtn" title="Session Mode">
+                <span class="mode-badge-dot" id="modeBadgeDot"></span>
+                <span id="modeBadgeText">Demo Sandbox</span>
+            </button>
             <button class="icon-btn" id="historyBtn" title="Mental State History">
                 <span class="material-icons-round">history</span>
             </button>
@@ -812,6 +876,34 @@
         </div>
     </div>
 
+    <!-- ── Owner Mode Modal ── -->
+    <div id="ownerModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; max-width: 400px; width: 90%;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="font-size: 1.1rem; font-weight: 600; margin: 0;" id="ownerModalTitle">Owner Authentication</h3>
+                <button class="icon-btn" id="closeOwnerModalBtn" style="width: 32px; height: 32px;">
+                    <span class="material-icons-round" style="font-size: 1.2rem;">close</span>
+                </button>
+            </div>
+            <div id="ownerModalGuestBody">
+                <p style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem;">
+                    Unlock Live Owner Mode with Google Workspace tools (Gmail, Calendar, Tasks).
+                </p>
+                <input type="password" id="ownerAccessKeyInput" placeholder="Enter OWNER_ACCESS_KEY..." class="fallback-input" style="width: 100%; box-sizing: border-box; margin-bottom: 1rem;" />
+                <button class="btn-start" id="submitOwnerAuthBtn" style="width: 100%;">Unlock Live Mode</button>
+            </div>
+            <div id="ownerModalOwnerBody" style="display: none;">
+                <p style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 1rem;">
+                    You are in <strong>Owner Live Mode</strong>. Your live Google Workspace credentials and APIs are active.
+                </p>
+                <button class="btn-start" id="logoutOwnerBtn" style="width: 100%; background: var(--surface-elevated); border: 1px solid var(--border); color: var(--text);">Switch to Demo Sandbox</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Toast Notification ── -->
+    <div id="appToast" class="toast-notification"></div>
+
     <!-- ── History Sidebar ── -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
@@ -843,6 +935,11 @@
     </aside>
 
     <script>
+        // ── Dynamic API Base Resolution ──
+        const API_BASE = (window.location.port === "5000" || window.location.port === "" || window.location.port === "443" || window.location.protocol === "https:")
+            ? ""
+            : "http://localhost:5000";
+
         // ── DOM Elements ──
         const UI = {
             setupModal: document.getElementById('setupModal'),
@@ -871,7 +968,18 @@
             emoChatSidebar: document.getElementById('emoChatSidebar'),
             closeEmoChatSidebar: document.getElementById('closeEmoChatSidebar'),
             emoChatHistoryContent: document.getElementById('emoChatHistoryContent'),
-            sidebarOverlay: document.getElementById('sidebarOverlay')
+            sidebarOverlay: document.getElementById('sidebarOverlay'),
+            modeBadgeBtn: document.getElementById('modeBadgeBtn'),
+            modeBadgeDot: document.getElementById('modeBadgeDot'),
+            modeBadgeText: document.getElementById('modeBadgeText'),
+            ownerModal: document.getElementById('ownerModal'),
+            closeOwnerModalBtn: document.getElementById('closeOwnerModalBtn'),
+            ownerAccessKeyInput: document.getElementById('ownerAccessKeyInput'),
+            submitOwnerAuthBtn: document.getElementById('submitOwnerAuthBtn'),
+            logoutOwnerBtn: document.getElementById('logoutOwnerBtn'),
+            ownerModalGuestBody: document.getElementById('ownerModalGuestBody'),
+            ownerModalOwnerBody: document.getElementById('ownerModalOwnerBody'),
+            appToast: document.getElementById('appToast')
         };
 
         // ── State ──
@@ -1054,12 +1162,18 @@
 
                                 try {
                                     updateStatus('Analyzing voice...');
-                                    const biomarkerRes = await fetch('http://127.0.0.1:5000/api/analyze_audio', {
+                                    const biomarkerRes = await fetch(`${API_BASE}/api/analyze_audio`, {
                                         method: 'POST',
+                                        credentials: 'include',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ audio_base64: base64Audio, user_id: currentUserId })
                                     });
-                                    if (!biomarkerRes.ok) throw new Error(`Server returned ${biomarkerRes.status}`);
+                                    if (biomarkerRes.status === 429) {
+                                        const retryAfter = biomarkerRes.headers.get('Retry-After') || '60';
+                                        showToast(`Voice analysis rate limit reached. Retry in ${retryAfter}s.`, false);
+                                    } else if (!biomarkerRes.ok) {
+                                        throw new Error(`Server returned ${biomarkerRes.status}`);
+                                    }
                                     const biomarkerData = await biomarkerRes.json();
                                     if (biomarkerData.alert) {
                                         pendingBiomarkerData = biomarkerData;
@@ -1139,8 +1253,9 @@
             updateStatus('Tinkr thinking...');
             
             try {
-                const chatRes = await fetch('http://127.0.0.1:5000/api/chat_stream', {
+                const chatRes = await fetch(`${API_BASE}/api/chat_stream`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         text: text,
@@ -1148,6 +1263,26 @@
                         emotion_context: emotionContext
                     })
                 });
+
+                if (chatRes.status === 429) {
+                    const retryAfter = chatRes.headers.get('Retry-After') || '60';
+                    showToast(`Rate limit reached. Please wait ${retryAfter}s.`, false);
+                    setStreamText(`Rate limit reached. Please wait ${retryAfter}s before sending another message.`, "system-text");
+                    setSpeakingState(false);
+                    return;
+                }
+
+                if (!chatRes.ok) {
+                    let errMsg = `Request failed (${chatRes.status})`;
+                    try {
+                        const errJson = await chatRes.json();
+                        if (errJson.error) errMsg = errJson.error;
+                    } catch (_) {}
+                    showToast(errMsg, false);
+                    setStreamText(`Error: ${errMsg}`, "system-text");
+                    setSpeakingState(false);
+                    return;
+                }
                 
                 const reader = chatRes.body.getReader();
                 const decoder = new TextDecoder('utf-8');
@@ -1208,8 +1343,9 @@
                 // Save emotional chat to DB if this was an emotional context conversation
                 if (emotionContext && currentEmotionalStateId && fullResponse.trim()) {
                     try {
-                        await fetch('http://127.0.0.1:5000/api/save_emotional_chat', {
+                        await fetch(`${API_BASE}/api/save_emotional_chat`, {
                             method: 'POST',
+                            credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 user_id: currentUserId,
@@ -1394,8 +1530,9 @@
                 };
 
                 try {
-                    const saveRes = await fetch('http://127.0.0.1:5000/api/save_mental_state', {
+                    const saveRes = await fetch(`${API_BASE}/api/save_mental_state`, {
                         method: 'POST',
+                        credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
@@ -1416,11 +1553,18 @@
         async function loadHistory() {
             UI.historyContent.innerHTML = '<p style="color: var(--text-dim); text-align: center;">Loading...</p>';
             try {
-                const res = await fetch('http://127.0.0.1:5000/api/get_mental_state_history', {
+                const res = await fetch(`${API_BASE}/api/get_mental_state_history`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: currentUserId, limit: 10 })
                 });
+                if (res.status === 429) {
+                    const retryAfter = res.headers.get('Retry-After') || '60';
+                    showToast(`Rate limit reached. Retry in ${retryAfter}s.`, false);
+                    UI.historyContent.innerHTML = `<p style="color: var(--danger); text-align: center;">Rate limited. Retry in ${retryAfter}s.</p>`;
+                    return;
+                }
                 const data = await res.json();
                 
                 if (!data.success || data.history.length === 0) {
@@ -1428,23 +1572,28 @@
                     return;
                 }
 
-                UI.historyContent.innerHTML = data.history.map(entry => `
-                    <div class="history-item">
-                        <div class="history-item-header">
-                            <span class="history-state">${entry.predicted_state}</span>
-                            <span class="history-time">${new Date(entry.timestamp).toLocaleDateString()}</span>
-                        </div>
-                        <div class="history-details">
-                            <div style="display:flex; align-items:center; gap:0.25rem; margin-bottom: 0.5rem;">
-                                <span class="material-icons-round" style="font-size:1rem; color: ${entry.user_confirmed ? 'var(--success)' : 'var(--text-dim)'}">
-                                    ${entry.user_confirmed ? 'check_circle' : 'radio_button_unchecked'}
-                                </span>
-                                ${entry.user_confirmed ? 'Confirmed by you' : 'Unconfirmed'}
+                UI.historyContent.innerHTML = data.history.map(entry => {
+                    const safeState = escapeHtml(entry.predicted_state);
+                    const safeDate = escapeHtml(new Date(entry.timestamp).toLocaleDateString());
+                    const safeEnergy = escapeHtml(entry.voice_energy_level);
+                    return `
+                        <div class="history-item">
+                            <div class="history-item-header">
+                                <span class="history-state">${safeState}</span>
+                                <span class="history-time">${safeDate}</span>
                             </div>
-                            Energy: ${entry.voice_energy_level}
+                            <div class="history-details">
+                                <div style="display:flex; align-items:center; gap:0.25rem; margin-bottom: 0.5rem;">
+                                    <span class="material-icons-round" style="font-size:1rem; color: ${entry.user_confirmed ? 'var(--success)' : 'var(--text-dim)'}">
+                                        ${entry.user_confirmed ? 'check_circle' : 'radio_button_unchecked'}
+                                    </span>
+                                    ${entry.user_confirmed ? 'Confirmed by you' : 'Unconfirmed'}
+                                </div>
+                                Energy: ${safeEnergy}
+                            </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } catch (err) {
                 UI.historyContent.innerHTML = '<p style="color: var(--danger); text-align: center;">Error loading history.</p>';
             }
@@ -1454,11 +1603,18 @@
         async function loadEmotionalChatHistory() {
             UI.emoChatHistoryContent.innerHTML = '<p style="color: var(--text-dim); text-align: center;">Loading...</p>';
             try {
-                const res = await fetch('http://127.0.0.1:5000/api/get_emotional_chat_history', {
+                const res = await fetch(`${API_BASE}/api/get_emotional_chat_history`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: currentUserId, limit: 20 })
                 });
+                if (res.status === 429) {
+                    const retryAfter = res.headers.get('Retry-After') || '60';
+                    showToast(`Rate limit reached. Retry in ${retryAfter}s.`, false);
+                    UI.emoChatHistoryContent.innerHTML = `<p style="color: var(--danger); text-align: center;">Rate limited. Retry in ${retryAfter}s.</p>`;
+                    return;
+                }
                 const data = await res.json();
 
                 if (!data.success || data.history.length === 0) {
@@ -1469,16 +1625,19 @@
                 const stateIcons = { stressed: 'warning', anxious: 'help_outline', fatigued: 'battery_alert' };
 
                 UI.emoChatHistoryContent.innerHTML = data.history.map((entry, idx) => {
+                    const safeState = escapeHtml(entry.predicted_state);
                     const icon = stateIcons[entry.predicted_state] || 'psychology';
                     const date = new Date(entry.timestamp);
-                    const timeStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
-                                    date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                    const timeStr = escapeHtml(
+                        date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
+                        date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                    );
 
                     let chatHTML = '';
                     if (entry.chats && entry.chats.length > 0) {
                         chatHTML = entry.chats.map(c => {
                             const bubbleClass = c.role === 'user' ? 'user-bubble' : 'assistant-bubble';
-                            return `<div class="emo-chat-bubble ${bubbleClass}">${escapeHtml(c.content)}</div>`;
+                            return `<div class="emo-chat-bubble ${bubbleClass}">${renderSafeText(c.content)}</div>`;
                         }).join('');
                     } else {
                         chatHTML = '<div class="emo-no-chats">No conversation recorded</div>';
@@ -1487,9 +1646,9 @@
                     return `
                         <div class="emo-history-item" onclick="toggleEmoChat(this)" data-idx="${idx}">
                             <div class="emo-item-header">
-                                <span class="emo-state-badge ${entry.predicted_state}">
+                                <span class="emo-state-badge ${safeState}">
                                     <span class="material-icons-round" style="font-size: 0.9rem;">${icon}</span>
-                                    ${entry.predicted_state}
+                                    ${safeState}
                                 </span>
                                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                                     <span class="emo-time">${timeStr}</span>
@@ -1528,9 +1687,33 @@
         window.toggleEmoChat = toggleEmoChat;
 
         function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            if (text === null || text === undefined) return '';
+            const str = String(text);
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderSafeText(rawText) {
+            if (!rawText) return '';
+            // Strip thinking/thought blocks: <thought>...</thought> and <think>...</think>
+            let cleaned = rawText
+                .replace(/<(thought|think)>[\s\S]*?<\/\1>/gi, '')
+                .replace(/<(thought|think)>[\s\S]*/gi, '');
+
+            // Escape HTML entities first
+            let escaped = escapeHtml(cleaned.trim());
+
+            // Safe inline markdown transformations
+            escaped = escaped.replace(/`([^`]+)`/g, '<code style="background:var(--surface-elevated);padding:2px 4px;border-radius:4px;font-size:0.9em;">$1</code>');
+            escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            escaped = escaped.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            escaped = escaped.replace(/\n/g, '<br>');
+
+            return escaped;
         }
 
         // ── Helpers ──
@@ -1547,8 +1730,132 @@
         }
 
         function setStreamText(text, className) {
-            UI.transcriptStream.innerHTML = `<div class="${className}" style="animation: fade-in 0.3s ease forwards;">${text}</div>`;
+            const safeClass = escapeHtml(className);
+            const content = (className === 'ai-text') ? renderSafeText(text) : escapeHtml(text);
+            UI.transcriptStream.innerHTML = `<div class="${safeClass}" style="animation: fade-in 0.3s ease forwards;">${content}</div>`;
         }
+
+        let toastTimeout = null;
+        function showToast(message, isSuccess = false) {
+            if (!UI.appToast) return;
+            if (toastTimeout) clearTimeout(toastTimeout);
+            UI.appToast.textContent = message;
+            UI.appToast.style.borderColor = isSuccess ? 'var(--success)' : 'var(--danger)';
+            UI.appToast.classList.add('show');
+            toastTimeout = setTimeout(() => {
+                UI.appToast.classList.remove('show');
+            }, 4000);
+        }
+
+        // ── Session & Owner Auth Management ──
+        let currentSessionRole = 'guest';
+
+        async function refreshSessionState() {
+            try {
+                const res = await fetch(`${API_BASE}/api/session`, {
+                    credentials: 'include'
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    currentSessionRole = data.role || 'guest';
+                    updateModeBadge(data.role, data.workspace_mode);
+                }
+            } catch (e) {
+                console.warn('Session check failed:', e);
+            }
+        }
+
+        function updateModeBadge(role, workspaceMode) {
+            if (!UI.modeBadgeText || !UI.modeBadgeDot || !UI.modeBadgeBtn) return;
+            if (role === 'owner') {
+                UI.modeBadgeText.textContent = 'Owner Live Mode';
+                UI.modeBadgeBtn.classList.add('live');
+                UI.modeBadgeDot.classList.add('live');
+                if (UI.ownerModalGuestBody && UI.ownerModalOwnerBody) {
+                    UI.ownerModalGuestBody.style.display = 'none';
+                    UI.ownerModalOwnerBody.style.display = 'block';
+                }
+            } else {
+                UI.modeBadgeText.textContent = 'Demo Sandbox';
+                UI.modeBadgeBtn.classList.remove('live');
+                UI.modeBadgeDot.classList.remove('live');
+                if (UI.ownerModalGuestBody && UI.ownerModalOwnerBody) {
+                    UI.ownerModalGuestBody.style.display = 'block';
+                    UI.ownerModalOwnerBody.style.display = 'none';
+                }
+            }
+        }
+
+        if (UI.modeBadgeBtn) {
+            UI.modeBadgeBtn.addEventListener('click', () => {
+                if (UI.ownerModal) {
+                    UI.ownerModal.style.display = 'flex';
+                }
+            });
+        }
+
+        if (UI.closeOwnerModalBtn) {
+            UI.closeOwnerModalBtn.addEventListener('click', () => {
+                if (UI.ownerModal) {
+                    UI.ownerModal.style.display = 'none';
+                }
+            });
+        }
+
+        if (UI.submitOwnerAuthBtn) {
+            UI.submitOwnerAuthBtn.addEventListener('click', async () => {
+                const key = UI.ownerAccessKeyInput ? UI.ownerAccessKeyInput.value.trim() : '';
+                if (!key) {
+                    showToast('Please enter the owner access key.', false);
+                    return;
+                }
+                try {
+                    const res = await fetch(`${API_BASE}/api/auth/owner`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ access_key: key })
+                    });
+                    if (res.status === 429) {
+                        const retryAfter = res.headers.get('Retry-After') || '900';
+                        showToast(`Too many attempts. Locked out for ${retryAfter}s.`, false);
+                        return;
+                    }
+                    if (res.ok) {
+                        showToast('Owner mode authenticated successfully!', true);
+                        if (UI.ownerAccessKeyInput) UI.ownerAccessKeyInput.value = '';
+                        if (UI.ownerModal) UI.ownerModal.style.display = 'none';
+                        await refreshSessionState();
+                    } else {
+                        const err = await res.json().catch(() => ({}));
+                        showToast(err.error || 'Authentication failed.', false);
+                    }
+                } catch (e) {
+                    showToast('Network error during authentication.', false);
+                }
+            });
+        }
+
+        if (UI.logoutOwnerBtn) {
+            UI.logoutOwnerBtn.addEventListener('click', async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/auth/logout`, {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+                    if (res.ok) {
+                        showToast('Switched to Demo Sandbox mode.', true);
+                        if (UI.ownerModal) UI.ownerModal.style.display = 'none';
+                        await refreshSessionState();
+                    }
+                } catch (e) {
+                    showToast('Network error during logout.', false);
+                }
+            });
+        }
+
+        // Initialize session state on load
+        refreshSessionState();
     </script>
 </body>
 </html>

@@ -1,10 +1,16 @@
-import sqlite3
 import random
+import sqlite3
 from datetime import datetime, timedelta
 
+from config import config
+from logger import get_logger
+
+logger = get_logger("setup_db")
+
+
 def setup_database():
-    print("📦 Creating company_data.db...")
-    conn = sqlite3.connect('company_data.db')
+    logger.info("Creating database at %s...", config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     cursor = conn.cursor()
 
     # Create tables
@@ -105,7 +111,8 @@ def setup_database():
 
     conn.commit()
     conn.close()
-    print("✅ Database successfully created and populated with dummy e-commerce data!")
+    logger.info("Database successfully created and populated with sample data at %s", config.DB_PATH)
+
 
 if __name__ == '__main__':
     setup_database()
