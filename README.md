@@ -492,6 +492,71 @@ the sandbox calendar response, and a short SSE request after rollback. Because t
 free filesystems are ephemeral, rollback reseeds the sample database; never treat
 that database as durable user data.
 
+## How to Enable Live Google Calendar & Gmail (Self-Hosting Guide)
+
+By default, the public Tinkr demo runs in **Demo Sandbox** mode (Calendar, Gmail, and Tasks are simulated). To schedule real calendar events and send real emails on your own Google account, deploy your own instance and connect your Google Workspace:
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/rishav-raj-genx/Tinkr.git
+cd Tinkr
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Enable Google APIs & Create OAuth Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create a new project.
+2. Open **APIs & Services → Library**, then enable:
+   - **Google Calendar API**
+   - **Gmail API**
+   - **Google Tasks API** (optional, for to-do lists)
+3. Open **APIs & Services → OAuth consent screen**:
+   - Choose **External** → fill in App name & your email.
+   - Under **Test users**, add your Gmail address and click **Save**.
+4. Open **APIs & Services → Credentials → + Create Credentials → OAuth client ID**:
+   - Application type: **Web application**
+   - **Authorized JavaScript origins:** `http://localhost:8000`
+   - **Authorized redirect URIs:** `http://localhost:8000/auth/callback`
+   - Copy your **Client ID** and **Client Secret**.
+
+### 3. Configure Environment Variables (`.env`)
+
+```env
+API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
+SECRET_KEY=any_long_random_string
+FLASK_ENV=development
+FRONTEND_URL=http://localhost:5000
+
+OWNER_ACCESS_KEY=choose_a_secret_password
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:8000/auth/callback
+HOST_CALENDAR_ID=your_email@gmail.com
+HOST_EMAIL=your_email@gmail.com
+```
+
+### 4. Authorize Your Google Account (Generates `token.json`)
+
+```bash
+python auth_server.py
+```
+
+1. Open `http://localhost:8000` in your browser.
+2. Click **Authorize Google Calendar and Gmail** and sign in with your Gmail.
+3. If prompted with *"Google hasn't verified this app"*, click **Advanced → Go to Tinkr (unsafe) → Allow**.
+4. Once you see **"Success! Token has been saved."**, stop `auth_server.py` (`Ctrl+C`).
+
+### 5. Run Tinkr & Unlock Owner Live Mode
+
+- **Locally:** Run `python api_server.py` and open `http://localhost:5000`.
+- **On Render / Cloud:** Add all `.env` variables in your host's Environment settings, set `FLASK_ENV=production` and `FRONTEND_URL=https://your-app-url`, and paste the full contents of `token.json` into `GOOGLE_TOKEN_JSON`.
+- **Activate:** Click the **Demo Sandbox** badge in the top-right corner, enter your `OWNER_ACCESS_KEY`, and click **Unlock Live Mode**.
+
+Once the badge switches to **Owner Live Mode**, Tinkr will schedule real events on your Google Calendar and send real emails via your Gmail.
+
 ## Trademarks & Disclaimers
 
 Gemma is a trademark of Google LLC. **Tinkr** is an independent project created for the *Build with Gemma 4 - AI Durg Hackathon* and is not affiliated with or officially endorsed by Google LLC.
