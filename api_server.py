@@ -53,8 +53,9 @@ configure_security(app)
 # Configure explicit CORS origins (no wildcard credentials)
 allowed_origins = [
     config.FRONTEND_URL.rstrip("/"),
-    "http://localhost:5000",
-    "http://127.0.0.1:5000",
+    "https://tinkr.onrender.com",
+    "http://localhost:5001",
+    "http://127.0.0.1:5001",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 ]
@@ -125,7 +126,7 @@ def add_security_headers(response):
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
         "media-src 'self' blob: data:; "
-        "connect-src 'self' http://localhost:5000 http://127.0.0.1:5000;"
+        "connect-src 'self' http://localhost:5001 http://127.0.0.1:5001;"
     )
     response.headers["Content-Security-Policy"] = csp
 

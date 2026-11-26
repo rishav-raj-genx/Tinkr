@@ -936,9 +936,9 @@
 
     <script>
         // ── Dynamic API Base Resolution ──
-        const API_BASE = (window.location.port === "5000" || window.location.port === "" || window.location.port === "443" || window.location.protocol === "https:")
+        const API_BASE = (window.location.port === "5001" || window.location.port === "" || window.location.port === "443" || window.location.protocol === "https:")
             ? ""
-            : "http://localhost:5000";
+            : "http://localhost:5001";
 
         // ── DOM Elements ──
         const UI = {
@@ -1225,7 +1225,21 @@
                     console.error("Mic Error:", err);
                     isCallActive = false;
                     resetCallBtnUI();
-                    setStreamText("Microphone access denied.", "system-text");
+                    // Give a helpful message based on the actual error type
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        setStreamText("❌ Microphone permission denied. Please allow microphone access in your browser settings and reload the page.", "system-text");
+                        showToast("Microphone blocked — allow it in browser settings and reload.", false);
+                    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                        setStreamText("❌ No microphone found. Please connect a microphone and try again.", "system-text");
+                        showToast("No microphone detected.", false);
+                    } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                        setStreamText("❌ Microphone is in use by another app. Close other apps and try again.", "system-text");
+                        showToast("Microphone busy — close other apps.", false);
+                    } else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                        setStreamText("❌ Microphone requires HTTPS. Please access the site via https://", "system-text");
+                    } else {
+                        setStreamText("❌ Microphone error: " + (err.message || err.name), "system-text");
+                    }
                 }
             } else {
                 resetCallBtnUI();
@@ -1482,7 +1496,7 @@
         // ── Wellness Modal Logic ──
         let wellnessResolve = null;
         let wellnessTimeout = null;
-        const WELLNESS_TIMEOUT_MS = 15000; // Auto-dismiss after 15 seconds
+        const WELLNESS_TIMEOUT_MS = 15001; // Auto-dismiss after 15 seconds
 
         function triggerWellnessPrompt(bioData) {
             return new Promise((resolve) => {
@@ -1856,6 +1870,29 @@
 
         // Initialize session state on load
         refreshSessionState();
+
+        // ── Keep-Alive Cron Job ──
+        // Pings /api/health every 10 minutes to prevent Render free-tier sleep
+        (function startKeepAlive() {
+            const PING_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+            async function pingServer() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/health`, { method: 'GET', credentials: 'include' });
+                    if (res.ok) {
+                        console.log('[KeepAlive] Server pinged successfully at', new Date().toISOString());
+                    } else {
+                        console.warn('[KeepAlive] Ping returned status', res.status);
+                    }
+                } catch (e) {
+                    console.warn('[KeepAlive] Ping failed:', e.message);
+                }
+            }
+            // Initial ping after 30s to avoid blocking startup
+            setTimeout(() => {
+                pingServer();
+                setInterval(pingServer, PING_INTERVAL_MS);
+            }, 30000);
+        })();
     </script>
 </body>
 </html>
