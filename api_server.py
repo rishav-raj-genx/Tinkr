@@ -739,38 +739,61 @@ def handle_auth_logout():
 @app.route('/api/transcribe', methods=['POST'])
 @rate_limit("transcribe", 15, 60)
 def handle_transcribe():
-    """Receives audio from the frontend and transcribes it using Groq Whisper."""
+    """Transcribes audio via Groq Whisper.
+
+    Accepts two formats:
+    - multipart/form-data with 'audio' file field (original flow)
+    - application/json with 'audio_base64' field containing a base64-encoded WAV
+      (fallback when the browser's Web Speech API is blocked, e.g. in some regions)
+    """
     logger.info("Pipeline Step 1: STT transcription initiated")
-    if 'audio' not in request.files:
-        logger.error("No audio file provided in request.")
-        return jsonify({"success": False, "error": "No audio file provided"}), 400
 
-    audio_file = request.files['audio']
-    if not audio_file or not audio_file.filename:
-        return jsonify({"success": False, "error": "Empty audio file provided"}), 400
-
-    # Give every request its own file; a shared /tmp name lets concurrent uploads
-    # overwrite one another while the STT provider is reading the bytes.
-    with tempfile.NamedTemporaryFile(prefix="tinkr-audio-", suffix=".webm", delete=False) as temp_file:
-        temp_path = temp_file.name
-    audio_file.save(temp_path)
-
+    temp_path = None
     try:
-        with open(temp_path, "rb") as file:
+        # ── Path A: JSON base64 (Groq Whisper fallback) ──
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            audio_b64 = data.get("audio_base64", "")
+            if not audio_b64:
+                return jsonify({"success": False, "error": "Missing audio_base64"}), 400
+            try:
+                audio_bytes = base64.b64decode(audio_b64)
+            except Exception:
+                return jsonify({"success": False, "error": "Invalid base64 audio"}), 400
+            with tempfile.NamedTemporaryFile(prefix="tinkr-audio-", suffix=".wav", delete=False) as tf:
+                tf.write(audio_bytes)
+                temp_path = tf.name
+            suffix = ".wav"
+
+        # ── Path B: multipart file upload (original flow) ──
+        else:
+            if "audio" not in request.files:
+                logger.error("No audio file provided in request.")
+                return jsonify({"success": False, "error": "No audio file provided"}), 400
+            audio_file = request.files["audio"]
+            if not audio_file or not audio_file.filename:
+                return jsonify({"success": False, "error": "Empty audio file provided"}), 400
+            suffix = ".webm"
+            with tempfile.NamedTemporaryFile(prefix="tinkr-audio-", suffix=suffix, delete=False) as tf:
+                temp_path = tf.name
+            audio_file.save(temp_path)
+
+        with open(temp_path, "rb") as fh:
             transcription = groq_client.audio.transcriptions.create(
-                file=(temp_path, file.read()),
+                file=(f"audio{suffix}", fh.read()),
                 model="whisper-large-v3-turbo",
                 response_format="text",
-                timeout=10.0
+                timeout=20.0,
             )
-        text = str(transcription)
+        text = str(transcription).strip()
         logger.info("Transcribed audio successfully: '%s'", text)
         return jsonify({"success": True, "text": text})
+
     except Exception as e:
         logger.exception("Transcription failed: %s", e)
         return jsonify({"success": False, "error": "Internal server error"}), 500
     finally:
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except OSError:
