@@ -1113,7 +1113,10 @@
                     
                     if (recognition) {
                         window.currentTranscript = "";
+                        let recognitionErrored = false;
+
                         recognition.onresult = (event) => {
+                            recognitionErrored = false; // got audio — clear error flag
                             let interimTranscript = '';
                             let finalTranscript = '';
                             for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -1126,13 +1129,41 @@
                             window.currentTranscript += finalTranscript;
                             setStreamText(window.currentTranscript + interimTranscript, "user-text");
                         };
+
                         recognition.onerror = (event) => {
                             console.error("Speech Recognition Error:", event.error);
+                            if (event.error === 'no-speech') {
+                                // silence timeout — just restart quietly, don't kill session
+                                recognitionErrored = false;
+                                return;
+                            }
+                            if (event.error === 'aborted') {
+                                // user clicked stop — normal flow, let onend handle it
+                                recognitionErrored = true;
+                                return;
+                            }
+                            // Real errors — stop the session
+                            recognitionErrored = true;
                             isCallActive = false;
                             resetCallBtnUI();
-                            setStreamText("Microphone access denied or error.", "system-text");
+                            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+                            if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+                                setStreamText("❌ Microphone permission denied. Allow it in browser settings and reload.", "system-text");
+                            } else if (event.error === 'network') {
+                                setStreamText("❌ Speech recognition network error. Check your internet connection.", "system-text");
+                            } else if (event.error === 'audio-capture') {
+                                setStreamText("❌ No microphone found or microphone is busy.", "system-text");
+                            } else {
+                                setStreamText("❌ Speech error: " + event.error, "system-text");
+                            }
                         };
+
                         recognition.onend = async () => {
+                            // If session is still active and no hard error, auto-restart (handles browser auto-stop)
+                            if (isCallActive && !recognitionErrored) {
+                                try { recognition.start(); } catch(e) { /* already starting */ }
+                                return;
+                            }
                             if (pcmProcessor) {
                                 pcmProcessor.disconnect();
                                 pcmProcessor = null;
