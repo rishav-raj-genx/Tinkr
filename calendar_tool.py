@@ -112,23 +112,18 @@ def book_meeting(date_time_iso: str, name: str = "User") -> str:
         end_time = start_time + datetime.timedelta(minutes=30)
         calendar_id = config.HOST_CALENDAR_ID
 
-        # Fetch the calendar's native timezone so the event visually aligns
-        cal_tz = "UTC"
-        try:
-            cal_meta = service.calendars().get(calendarId=calendar_id).execute()
-            cal_tz = cal_meta.get("timeZone", "UTC")
-        except Exception:
-            pass
+        # _parse_datetime_ist returns naive wall-clock time in IST, so always send Asia/Kolkata
+        cal_tz = "Asia/Kolkata"
 
         event = {
             "summary": f"Meeting: {name}",
             "description": "Automated booking created via Tinkr Voice Assistant.",
             "start": {
-                "dateTime": start_time.isoformat(),
+                "dateTime": start_time.replace(tzinfo=IST).isoformat(),
                 "timeZone": cal_tz,
             },
             "end": {
-                "dateTime": end_time.isoformat(),
+                "dateTime": end_time.replace(tzinfo=IST).isoformat(),
                 "timeZone": cal_tz,
             },
         }
@@ -150,23 +145,18 @@ def set_reminder(title: str, date_time_iso: str) -> str:
         end_time = start_time + datetime.timedelta(minutes=15)
         calendar_id = config.HOST_CALENDAR_ID
 
-        # Fetch the calendar's native timezone
-        cal_tz = "UTC"
-        try:
-            cal_meta = service.calendars().get(calendarId=calendar_id).execute()
-            cal_tz = cal_meta.get("timeZone", "UTC")
-        except Exception:
-            pass
+        # _parse_datetime_ist returns naive wall-clock time in IST, so always send Asia/Kolkata
+        cal_tz = "Asia/Kolkata"
 
         event = {
             "summary": f"Reminder: {title}",
             "description": "Automated reminder created via Tinkr Voice Assistant.",
             "start": {
-                "dateTime": start_time.isoformat(),
+                "dateTime": start_time.replace(tzinfo=IST).isoformat(),
                 "timeZone": cal_tz,
             },
             "end": {
-                "dateTime": end_time.isoformat(),
+                "dateTime": end_time.replace(tzinfo=IST).isoformat(),
                 "timeZone": cal_tz,
             },
             "reminders": {
