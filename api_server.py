@@ -271,13 +271,41 @@ client = OpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
     timeout=10.0
 )
-MODEL_NAME = "gemma-4-26b-a4b-it"
+MODEL_NAME = "gemini-flash-lite-latest"
+# Fallback chain if primary model is unavailable (503)
+MODEL_FALLBACKS = [
+    "gemini-flash-lite-latest",
+    "gemma-4-26b-a4b-it",
+    "gemini-flash-latest",
+]
 
-# ── Groq Whisper STT Client ──
+# ── Groq Whisper STT & Fallback LLM Client ──
 groq_client = Groq(
     api_key=config.GROQ_API_KEY or "dummy_key",
-    timeout=10.0
+    timeout=15.0
 )
+GROQ_FALLBACK_MODEL = "llama-3.3-70b-versatile"
+
+
+def create_chat_completion_with_fallback(**kwargs):
+    """Try primary + fallback Gemini models, then Groq LLM if all Gemini models fail."""
+    last_exc = None
+    for model_id in MODEL_FALLBACKS:
+        try:
+            return client.chat.completions.create(model=model_id, **kwargs)
+        except Exception as exc:
+            logger.warning("Model %s failed (%s), trying next fallback...", model_id, exc)
+            last_exc = exc
+
+    if config.GROQ_API_KEY and config.GROQ_API_KEY != "dummy_key":
+        try:
+            logger.info("All Gemini models failed; falling back to Groq %s", GROQ_FALLBACK_MODEL)
+            return groq_client.chat.completions.create(model=GROQ_FALLBACK_MODEL, **kwargs)
+        except Exception as exc:
+            logger.warning("Groq fallback model failed: %s", exc)
+            last_exc = exc
+
+    raise last_exc
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -861,8 +889,7 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
     def generate():
         try:
             if active_tools:
-                response = client.chat.completions.create(
-                    model=MODEL_NAME,
+                response = create_chat_completion_with_fallback(
                     messages=messages,
                     tools=active_tools,
                     tool_choice="auto",
@@ -888,8 +915,7 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
                         })
 
             # Stream the final response
-            stream_response = client.chat.completions.create(
-                model=MODEL_NAME,
+            stream_response = create_chat_completion_with_fallback(
                 messages=messages,
                 stream=True,
                 timeout=10.0,

@@ -1111,10 +1111,137 @@
                     
                     startVisualizer();
                     
+                    let useGroqFallback = false;
+                    let isFinishingRecording = false;
+
+                    async function finishRecordingAndProcess() {
+                        if (isFinishingRecording) return;
+                        isFinishingRecording = true;
+
+                        if (pcmProcessor) {
+                            pcmProcessor.disconnect();
+                            pcmProcessor = null;
+                        }
+                        if (mediaStream) {
+                            mediaStream.getTracks().forEach(t => t.stop());
+                            mediaStream = null;
+                        }
+
+                        let emotionContext = "";
+                        if (audioChunks.length > 0) {
+                            let totalLength = audioChunks.reduce((acc, val) => acc + val.length, 0);
+                            let result = new Float32Array(totalLength);
+                            let offset = 0;
+                            for (let chunk of audioChunks) {
+                                result.set(chunk, offset);
+                                offset += chunk.length;
+                            }
+                            let int16Array = new Int16Array(result.length);
+                            for (let i = 0; i < result.length; i++) {
+                                let s = Math.max(-1, Math.min(1, result[i]));
+                                int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                            }
+                            let binary = '';
+                            let bytes = new Uint8Array(int16Array.buffer);
+                            let len = bytes.byteLength;
+                            for (let i = 0; i < len; i++) {
+                                binary += String.fromCharCode(bytes[i]);
+                            }
+                            let base64Audio = btoa(binary);
+
+                            try {
+                                updateStatus('Analyzing voice...');
+                                const biomarkerRes = await fetch(`${API_BASE}/api/analyze_audio`, {
+                                    method: 'POST',
+                                    credentials: 'include',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ audio_base64: base64Audio, user_id: currentUserId })
+                                });
+                                if (biomarkerRes.status === 429) {
+                                    const retryAfter = biomarkerRes.headers.get('Retry-After') || '60';
+                                    showToast(`Voice analysis rate limit reached. Retry in ${retryAfter}s.`, false);
+                                } else if (!biomarkerRes.ok) {
+                                    throw new Error(`Server returned ${biomarkerRes.status}`);
+                                }
+                                const biomarkerData = await biomarkerRes.json();
+                                if (biomarkerData.alert) {
+                                    pendingBiomarkerData = biomarkerData;
+                                    const isConfirmed = await triggerWellnessPrompt(biomarkerData);
+                                    if (isConfirmed && biomarkerData.message) {
+                                        emotionContext = `[USER-CONFIRMED WELLNESS ALERT] The user has CONFIRMED they are feeling ${biomarkerData.predicted_state}. ` +
+                                            `Voice energy: ${biomarkerData.voice_energy_level}. ` +
+                                            `You MUST first warmly acknowledge their ${biomarkerData.predicted_state} state and offer comfort like a caring friend before answering their question. ` +
+                                            `Suggest something calming they can do right now.`;
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Biomarker error (non-fatal):", e);
+                            }
+                        }
+
+                        // ── Groq Whisper fallback when Web Speech API is unavailable or blocked ──
+                        if ((useGroqFallback || !(window.currentTranscript && window.currentTranscript.trim())) && audioChunks.length > 0) {
+                            try {
+                                updateStatus('Transcribing audio via Groq...');
+                                const wavB64 = buildWavBase64(audioChunks, 16000);
+                                const txRes = await fetch(`${API_BASE}/api/transcribe`, {
+                                    method: 'POST',
+                                    credentials: 'include',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ audio_base64: wavB64 })
+                                });
+                                if (txRes.ok) {
+                                    const txData = await txRes.json();
+                                    const transcript = (txData.text || '').trim();
+                                    if (transcript) {
+                                        window.currentTranscript = transcript;
+                                        setStreamText(transcript, "user-text");
+                                    } else {
+                                        setStreamText("Didn't catch that — please try speaking again.", "system-text");
+                                        updateStatus('Ready to listen');
+                                    }
+                                } else {
+                                    console.error('Groq transcription HTTP error:', txRes.status);
+                                    setStreamText("❌ Transcription failed (server " + txRes.status + ").", "system-text");
+                                    updateStatus('Ready to listen');
+                                }
+                            } catch (e) {
+                                console.error('Groq transcription fallback error:', e);
+                                setStreamText("❌ Transcription error. Please try again.", "system-text");
+                                updateStatus('Ready to listen');
+                            }
+                            useGroqFallback = false;
+                        }
+
+                        let currentTx = window.currentTranscript ? window.currentTranscript.trim() : "";
+                        let fallbackTx = UI.fallbackInput.value.trim();
+                        let combinedText = "";
+
+                        if (currentTx && fallbackTx) {
+                            combinedText = currentTx + " (Context: " + fallbackTx + ")";
+                        } else if (currentTx) {
+                            combinedText = currentTx;
+                        } else if (fallbackTx) {
+                            combinedText = fallbackTx;
+                        }
+
+                        if (combinedText) {
+                            processText(combinedText, emotionContext);
+                            window.currentTranscript = "";
+                            UI.fallbackInput.value = "";
+                        } else {
+                            updateStatus('Ready to listen');
+                        }
+
+                        isCallActive = false;
+                        resetCallBtnUI();
+                    }
+                    window._finishRecordingAndProcess = finishRecordingAndProcess;
+                    window._isGroqFallbackActive = () => useGroqFallback;
+
                     if (recognition) {
                         window.currentTranscript = "";
                         let recognitionErrored = false;
-                        let useGroqFallback = false;
 
                         recognition.onresult = (event) => {
                             recognitionErrored = false; // got audio — clear error flag
@@ -1134,29 +1261,28 @@
                         recognition.onerror = (event) => {
                             console.error("Speech Recognition Error:", event.error);
                             if (event.error === 'no-speech') {
-                                // silence timeout — just restart quietly, don't kill session
                                 recognitionErrored = false;
                                 return;
                             }
                             if (event.error === 'aborted') {
-                                // user clicked stop — normal flow, let onend handle it
                                 recognitionErrored = true;
                                 return;
                             }
                             if (event.error === 'network') {
-                                // Google's speech-to-text servers are blocked/unreachable in this region.
-                                // Fall back to Groq Whisper via /api/transcribe using the recorded PCM audio.
+                                // Google's speech-to-text servers are blocked/unreachable.
+                                // Keep recording PCM audio and switch to Groq Whisper when user stops.
                                 recognitionErrored = true;
-                                isCallActive = false;
                                 useGroqFallback = true;
-                                updateStatus('Transcribing via Groq Whisper...');
-                                return; // let onend handle audio processing
+                                updateStatus('Listening (Groq Whisper)...');
+                                setStreamText("Listening... Tap stop when you finish speaking.", "user-text");
+                                return;
                             }
                             // Real hard errors — stop the session
                             recognitionErrored = true;
                             isCallActive = false;
                             resetCallBtnUI();
-                            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+                            if (pcmProcessor) { pcmProcessor.disconnect(); pcmProcessor = null; }
+                            if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
                             if (event.error === 'not-allowed' || event.error === 'permission-denied') {
                                 setStreamText("❌ Microphone permission denied. Allow it in browser settings and reload.", "system-text");
                             } else if (event.error === 'audio-capture') {
@@ -1167,124 +1293,23 @@
                         };
 
                         recognition.onend = async () => {
+                            // If switched to Groq fallback and user is still speaking, keep recording!
+                            if (useGroqFallback && isCallActive) {
+                                return;
+                            }
                             // If session is still active and no hard error, auto-restart (handles browser auto-stop)
                             if (isCallActive && !recognitionErrored) {
                                 try { recognition.start(); } catch(e) { /* already starting */ }
                                 return;
                             }
-                            if (pcmProcessor) {
-                                pcmProcessor.disconnect();
-                                pcmProcessor = null;
-                            }
-                            
-                            let emotionContext = "";
-                            if (audioChunks.length > 0) {
-                                let totalLength = audioChunks.reduce((acc, val) => acc + val.length, 0);
-                                let result = new Float32Array(totalLength);
-                                let offset = 0;
-                                for (let chunk of audioChunks) {
-                                    result.set(chunk, offset);
-                                    offset += chunk.length;
-                                }
-                                let int16Array = new Int16Array(result.length);
-                                for (let i = 0; i < result.length; i++) {
-                                    let s = Math.max(-1, Math.min(1, result[i]));
-                                    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                                }
-                                let binary = '';
-                                let bytes = new Uint8Array(int16Array.buffer);
-                                let len = bytes.byteLength;
-                                for (let i = 0; i < len; i++) {
-                                    binary += String.fromCharCode(bytes[i]);
-                                }
-                                let base64Audio = btoa(binary);
-
-                                try {
-                                    updateStatus('Analyzing voice...');
-                                    const biomarkerRes = await fetch(`${API_BASE}/api/analyze_audio`, {
-                                        method: 'POST',
-                                        credentials: 'include',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ audio_base64: base64Audio, user_id: currentUserId })
-                                    });
-                                    if (biomarkerRes.status === 429) {
-                                        const retryAfter = biomarkerRes.headers.get('Retry-After') || '60';
-                                        showToast(`Voice analysis rate limit reached. Retry in ${retryAfter}s.`, false);
-                                    } else if (!biomarkerRes.ok) {
-                                        throw new Error(`Server returned ${biomarkerRes.status}`);
-                                    }
-                                    const biomarkerData = await biomarkerRes.json();
-                                    if (biomarkerData.alert) {
-                                        pendingBiomarkerData = biomarkerData;
-                                        const isConfirmed = await triggerWellnessPrompt(biomarkerData);
-                                        if (isConfirmed && biomarkerData.message) {
-                                            emotionContext = `[USER-CONFIRMED WELLNESS ALERT] The user has CONFIRMED they are feeling ${biomarkerData.predicted_state}. ` +
-                                                `Voice energy: ${biomarkerData.voice_energy_level}. ` +
-                                                `You MUST first warmly acknowledge their ${biomarkerData.predicted_state} state and offer comfort like a caring friend before answering their question. ` +
-                                                `Suggest something calming they can do right now.`;
-                                        }
-                                    }
-                                } catch (e) {
-                                    console.error("Biomarker error (non-fatal):", e);
-                                }
-                            }
-
-                            // ── Groq Whisper fallback when Web Speech API network is blocked ──
-                            if (useGroqFallback && audioChunks.length > 0) {
-                                try {
-                                    updateStatus('Transcribing audio via Groq...');
-                                    const wavB64 = buildWavBase64(audioChunks, 16000);
-                                    const txRes = await fetch(`${API_BASE}/api/transcribe`, {
-                                        method: 'POST',
-                                        credentials: 'include',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ audio_base64: wavB64 })
-                                    });
-                                    if (txRes.ok) {
-                                        const txData = await txRes.json();
-                                        const transcript = txData.text || '';
-                                        if (transcript) {
-                                            window.currentTranscript = transcript;
-                                            setStreamText(transcript, "user-text");
-                                        }
-                                    } else {
-                                        console.error('Groq transcription HTTP error:', txRes.status);
-                                    }
-                                } catch (e) {
-                                    console.error('Groq transcription fallback error:', e);
-                                }
-                                useGroqFallback = false;
-                            }
-
-                            let currentTx = window.currentTranscript ? window.currentTranscript.trim() : "";
-                            let fallbackTx = UI.fallbackInput.value.trim();
-                            let combinedText = "";
-
-                            if (currentTx && fallbackTx) {
-                                combinedText = currentTx + " (Context: " + fallbackTx + ")";
-                            } else if (currentTx) {
-                                combinedText = currentTx;
-                            } else if (fallbackTx) {
-                                combinedText = fallbackTx;
-                            }
-
-                            if (combinedText) {
-                                processText(combinedText, emotionContext);
-                                window.currentTranscript = "";
-                                UI.fallbackInput.value = "";
-                            }
-                            
-                            isCallActive = false;
-                            resetCallBtnUI();
-                            if (mediaStream) {
-                                mediaStream.getTracks().forEach(t => t.stop());
-                            }
+                            await finishRecordingAndProcess();
                         };
                         recognition.start();
                     } else {
-                        alert("Speech recognition is not supported in this browser.");
-                        isCallActive = false;
-                        resetCallBtnUI();
+                        // Browser doesn't support Web Speech API — record directly for Groq Whisper
+                        useGroqFallback = true;
+                        updateStatus('Listening (Groq Whisper)...');
+                        setStreamText("Listening... Tap stop when you finish speaking.", "user-text");
                     }
 
                 } catch (err) {
@@ -1309,12 +1334,15 @@
                 }
             } else {
                 resetCallBtnUI();
-                if (recognition) {
-                    recognition.stop();
-                }
                 updateStatus('Processing...');
-                if (mediaStream) {
-                    mediaStream.getTracks().forEach(t => t.stop());
+                if (window._isGroqFallbackActive && window._isGroqFallbackActive()) {
+                    if (window._finishRecordingAndProcess) {
+                        window._finishRecordingAndProcess();
+                    }
+                } else if (recognition) {
+                    recognition.stop();
+                } else if (window._finishRecordingAndProcess) {
+                    window._finishRecordingAndProcess();
                 }
             }
         });
