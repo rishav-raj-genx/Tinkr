@@ -58,6 +58,11 @@ class Config:
             else:
                 self.SECRET_KEY = raw_secret
 
+        # Bootstrap token.json from GOOGLE_TOKEN_JSON env var if provided (for ephemeral hosts like Render)
+        token_env = os.getenv("GOOGLE_TOKEN_JSON", "").strip()
+        if token_env and not self.TOKEN_PATH.exists():
+            self.save_token_json(token_env)
+
     def diagnostics(self) -> dict[str, bool]:
         """Returns boolean-only health and integration readiness flags.
 

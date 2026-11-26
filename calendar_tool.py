@@ -78,8 +78,8 @@ def check_availability(date_iso: str) -> str:
 
         events_result = service.events().list(
             calendarId=calendar_id,
-            timeMin=start_of_day.isoformat(),
-            timeMax=end_of_day.isoformat(),
+            timeMin=start_of_day.replace(tzinfo=IST).isoformat(),
+            timeMax=end_of_day.replace(tzinfo=IST).isoformat(),
             singleEvents=True,
             orderBy="startTime",
             timeZone=cal_tz,

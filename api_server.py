@@ -557,7 +557,7 @@ tools = [
 # Tool name -> handler function mapping
 TOOL_HANDLERS = {
     "check_availability": lambda args: str(check_availability(date_iso=args.get("date"))),
-    "book_meeting": lambda args: str(book_meeting(date_time_iso=args.get("date_time"), name=args.get("guest_name", args.get("title", "Meeting")))),
+    "book_meeting": lambda args: str(book_meeting(date_time_iso=args.get("date_time"), name=args.get("guest_name") or args.get("title") or "Meeting")),
     "set_reminder": lambda args: str(set_reminder(title=args.get("title"), date_time_iso=args.get("date_time"))),
     "search_web": lambda args: str(search_web(query=args.get("query"))),
     "get_news": lambda args: str(get_news(query=args.get("query"))),
@@ -570,9 +570,11 @@ TOOL_HANDLERS = {
 }
 
 TRIGGER_WORDS = [
-    "calendar", "schedule", "book", "news", "search", "weather",
-    "task", "todo", "meeting", "remind", "reminder", "list", "pending",
-    "email", "mail", "draft", "inbox", "send", "unread",
+    "calendar", "schedule", "book", "appointment", "event", "news", "search",
+    "weather", "task", "todo", "meeting", "remind", "reminder", "list",
+    "pending", "email", "mail", "gmail", "draft", "compose", "inbox", "send",
+    "unread", "message", "reply", "write", "tomorrow", "today", "tonight",
+    "add", "set", "create", "check",
 ]
 
 
@@ -898,7 +900,21 @@ If any tool returns an error, you MUST explicitly tell the user what went wrong 
                 )
                 response_message = response.choices[0].message
                 if response_message.tool_calls:
-                    messages.append(response_message)
+                    messages.append({
+                        "role": "assistant",
+                        "content": response_message.content or "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments,
+                                },
+                            }
+                            for tc in response_message.tool_calls
+                        ],
+                    })
                     for tool_call in response_message.tool_calls:
                         function_name = tool_call.function.name
                         try:

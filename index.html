@@ -1539,7 +1539,7 @@
                 const goodVoice = voices.find(v => v.name.includes("Google") || v.name.includes("Samantha") || v.name.includes("Siri"));
                 if (goodVoice) utterance.voice = goodVoice;
                 
-                utterance.rate = 1.05; 
+                utterance.rate = 0.90; 
                 
                 utterance.onstart = () => {
                     UI.orbContainer.classList.add('speaking-mode');
